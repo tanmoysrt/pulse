@@ -1,0 +1,11 @@
+# Build output
+/pulse
+/dist/
+
+# Node / frontend tooling (UI is a single hand-written web/index.html; no build step)
+web/node_modules/
+web/dist/
+
+# Go
+*.test
+*.out
