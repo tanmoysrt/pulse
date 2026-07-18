@@ -5,7 +5,9 @@
 
       <div class="modal-label">Agent</div>
       <div class="seg">
-        <button v-for="a in AGENTS" :key="a" :class="{ on: agent === a }" @click="agent = a">{{ AGENT_LABELS[a] }}</button>
+        <button v-for="a in agents" :key="a" :class="{ on: agent === a }" @click="agent = a">
+          <span class="seg-logo" :class="'agent-' + a"><AgentLogo :tool="a" /></span>{{ AGENT_LABELS[a] }}
+        </button>
       </div>
 
       <div class="modal-label">Directory</div>
@@ -27,13 +29,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { listDirs, spawnSession } from '../lib/api'
 import { AGENTS, AGENT_LABELS } from '../constants'
+import AgentLogo from './AgentLogo.vue'
 
+const props = defineProps({ installed: { type: Array, default: () => [] } })
 const emit = defineEmits(['close', 'started'])
 
-const agent = ref('claude')
+const agents = computed(() => AGENTS.filter((a) => props.installed.includes(a)))
+const agent = ref(agents.value[0] || 'claude')
 const path = ref('')
 const parent = ref('')
 const dirs = ref([])

@@ -422,7 +422,8 @@
     }
     .agent-claude { background: #c96442; }
     .agent-codex { background: #10a37f; }
-    .agent-opencode { background: #6366f1; }
+    .agent-opencode { background: #131010; }
+    .agent-badge svg { width: 19px; height: 19px; display: block; }
     .card-main { flex: 1; min-width: 0; }
     .card-title { font-size: 14.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-sub { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
@@ -460,9 +461,15 @@
     .modal-label { font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--subtle); margin: 4px 0 8px; }
     .seg { display: flex; gap: 6px; margin-bottom: 16px; }
     .seg button {
-      flex: 1; padding: 9px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 9px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
       color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.15s;
     }
+    .seg-logo {
+      flex: none; width: 20px; height: 20px; border-radius: 6px; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .seg-logo svg { width: 12px; height: 12px; display: block; }
     .seg button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
     .dir-bar { display: flex; align-items: center; gap: 6px; font: 12.5px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 8px; word-break: break-all; }
     .dir-up { flex: none; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; padding: 3px 9px; font: inherit; cursor: pointer; }

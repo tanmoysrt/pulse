@@ -13,7 +13,7 @@
         <template v-if="live.length">
           <div class="home-section">Active</div>
           <button v-for="s in live" :key="s.id" class="card" @click="open(s, true)">
-            <div class="agent-badge" :class="'agent-' + s.tool">{{ abbr(s.tool) }}</div>
+            <div class="agent-badge" :class="'agent-' + s.tool"><AgentLogo :tool="s.tool" /></div>
             <div class="card-main">
               <div class="card-title">{{ cardTitle(s) }}</div>
               <div class="card-sub">{{ s.dir }}</div>
@@ -24,7 +24,7 @@
         <template v-if="history.length">
           <div class="home-section">History</div>
           <button v-for="s in history" :key="s.id" class="card" @click="open(s, false)">
-            <div class="agent-badge" :class="'agent-' + s.tool">{{ abbr(s.tool) }}</div>
+            <div class="agent-badge" :class="'agent-' + s.tool"><AgentLogo :tool="s.tool" /></div>
             <div class="card-main">
               <div class="card-title">{{ cardTitle(s) }}</div>
               <div class="card-sub">{{ s.dir }}</div>
@@ -37,7 +37,7 @@
       <div v-else-if="loaded" class="home-empty"><h2>No sessions yet</h2><p>Start one with “New chat”.</p></div>
     </div>
 
-    <NewChatModal v-if="showModal" @close="showModal = false" @started="onStarted" />
+    <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
   </div>
 </template>
 
@@ -45,9 +45,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
-import { AGENT_LABELS, AGENT_ABBR } from '../constants'
+import { AGENT_LABELS } from '../constants'
 import { baseName, timeAgo } from '../lib/format'
 import NewChatModal from '../components/NewChatModal.vue'
+import AgentLogo from '../components/AgentLogo.vue'
 
 const router = useRouter()
 const live = ref([])
@@ -55,8 +56,8 @@ const history = ref([])
 const loaded = ref(false)
 const error = ref(false)
 const showModal = ref(false)
+const installed = ref([])
 
-const abbr = (t) => AGENT_ABBR[t] || '?'
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
 
 function open(s, isLive) {
@@ -74,6 +75,7 @@ onMounted(async () => {
     const d = await listSessions()
     live.value = d.live || []
     history.value = d.history || []
+    installed.value = d.installed || []
   } catch (e) { error.value = true }
   loaded.value = true
 })
