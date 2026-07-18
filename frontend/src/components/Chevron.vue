@@ -1,9 +1,8 @@
 <template>
-  <svg class="chev" :class="{ up }" width="10" height="10" viewBox="0 0 10 10">
-    <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-  </svg>
+  <Icon name="chevron-down" class="chev" :class="{ up }" :size="14" />
 </template>
 
 <script setup>
+import Icon from './Icon.vue'
 defineProps({ up: Boolean })
 </script>

@@ -2,10 +2,15 @@
   <div class="home">
     <div class="home-head">
       <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
-      <button class="new-btn" @click="showModal = true">
-        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-        New chat
-      </button>
+      <div class="home-actions">
+        <button v-if="pushSup" class="notif-btn" :class="{ on: pushOn }" :title="pushOn ? 'Notifications on — tap to turn off' : 'Enable notifications'" @click="toggleNotifs">
+          <Icon :name="pushOn ? 'bell' : 'bell-off'" :size="16" />
+        </button>
+        <button class="new-btn" @click="showModal = true">
+          <Icon name="plus" :size="15" />
+          New chat
+        </button>
+      </div>
     </div>
 
     <div class="home-list">
@@ -47,8 +52,10 @@ import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
 import { baseName, timeAgo } from '../lib/format'
+import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
 import NewChatModal from '../components/NewChatModal.vue'
 import AgentLogo from '../components/AgentLogo.vue'
+import Icon from '../components/Icon.vue'
 
 const router = useRouter()
 const live = ref([])
@@ -57,6 +64,22 @@ const loaded = ref(false)
 const error = ref(false)
 const showModal = ref(false)
 const installed = ref([])
+
+// Notifications are a daemon-level setting: one browser subscription covers
+// every session, so it lives here rather than inside a chat.
+const pushSup = pushSupported()
+const pushOn = ref(false)
+let pushReg = null
+async function toggleNotifs() {
+  try {
+    if (pushOn.value) { await disablePush(pushReg); pushOn.value = false; return }
+    const reg = await enablePush()
+    if (reg) { pushReg = reg; pushOn.value = true }
+    else window.alert('Notifications were blocked in the browser.')
+  } catch (e) {
+    window.alert('Notifications need an HTTPS connection (open the public link).')
+  }
+}
 
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
 
@@ -78,5 +101,9 @@ onMounted(async () => {
     installed.value = d.installed || []
   } catch (e) { error.value = true }
   loaded.value = true
+  if (pushSup) {
+    const reg = await existingSubscription().catch(() => null)
+    if (reg) { pushReg = reg; pushOn.value = true }
+  }
 })
 </script>

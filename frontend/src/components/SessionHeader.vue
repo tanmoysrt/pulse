@@ -2,12 +2,12 @@
   <header :class="{ shadow }">
     <div class="brand">
       <button class="backbtn" title="Back" aria-label="Back" @click="$emit('back')">
-        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <Icon name="chevron-left" :size="18" />
       </button>
       <span class="title">{{ title || 'Pulse' }}</span>
       <span v-if="!readonly && status === 'connecting'" class="status-badge">Connecting</span>
       <button v-if="resumable" class="resume-btn" @click="$emit('resume')">
-        <svg width="13" height="13" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 1 1.6 3.9M2.5 12V8.5H6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <Icon name="rotate-cw" :size="13" />
         Resume
       </button>
     </div>
@@ -21,10 +21,9 @@
 
       <div class="kebab-wrap" ref="root">
         <button class="kebab" :class="{ active: open }" title="Session menu" aria-label="Session menu" @click="toggle">
-          <svg width="12" height="12" viewBox="0 0 16 16"><circle cx="8" cy="3" r="1.4" fill="currentColor" /><circle cx="8" cy="8" r="1.4" fill="currentColor" /><circle cx="8" cy="13" r="1.4" fill="currentColor" /></svg>
+          <Icon name="ellipsis-vertical" :size="16" />
         </button>
         <div v-if="open" class="kebab-menu">
-          <button v-if="pushSupported" class="menuitem" @click="run('togglePush')">{{ pushOn ? 'Turn off notifications' : 'Enable notifications' }}</button>
           <button class="menuitem" @click="run('clear')">Clear chat</button>
           <button class="menuitem danger" @click="run('close')">Close session</button>
         </div>
@@ -36,12 +35,13 @@
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
 import Chevron from './Chevron.vue'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   title: String, status: String, todos: { type: Array, default: () => [] },
-  tasksOpen: Boolean, readonly: Boolean, pushOn: Boolean, pushSupported: Boolean, shadow: Boolean, resumable: Boolean,
+  tasksOpen: Boolean, readonly: Boolean, shadow: Boolean, resumable: Boolean,
 })
-const emit = defineEmits(['back', 'toggleTasks', 'clear', 'close', 'togglePush', 'resume'])
+const emit = defineEmits(['back', 'toggleTasks', 'clear', 'close', 'resume'])
 
 const open = ref(false)
 const root = ref(null)

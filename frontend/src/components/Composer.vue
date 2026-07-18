@@ -26,16 +26,14 @@
         </div>
 
         <button class="attachbtn" title="Attach file" aria-label="Attach file" @click="pickFile">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
+          <Icon name="paperclip" :size="15" />
         </button>
 
         <button v-if="busy" class="iconbtn stopbtn" title="Stop" aria-label="Stop" @click="$emit('stop')">
-          <svg width="12" height="12" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" /></svg>
+          <Icon name="square" :size="13" />
         </button>
         <button v-else class="iconbtn send" title="Send" aria-label="Send" :disabled="!canSend" @click="doSend">
-          <svg width="14" height="14" viewBox="0 0 18 18"><path d="M2 9L16 2L11 16L8.5 10.5L2 9Z" fill="currentColor" /></svg>
+          <Icon name="send" :size="15" />
         </button>
       </div>
     </div>
@@ -46,6 +44,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import Selector from './Selector.vue'
+import Icon from './Icon.vue'
 import { agentLabel } from '../constants'
 import { isImageType, fileExtLabel } from '../lib/format'
 

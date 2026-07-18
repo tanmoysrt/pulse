@@ -4,18 +4,10 @@
 
     <SessionHeader
       :title="state.title" :status="state.status" :todos="state.todos" :tasksOpen="tasksOpen"
-      :pushOn="pushOn" :pushSupported="pushSup" :shadow="shadow"
-      @back="goHome" @toggleTasks="tasksOpen = !tasksOpen" @clear="onClear" @close="onClose" @togglePush="togglePush" />
+      :shadow="shadow"
+      @back="goHome" @toggleTasks="tasksOpen = !tasksOpen" @clear="onClear" @close="onClose" />
 
     <TasksSheet v-if="tasksOpen && state.todos.length" :todos="state.todos" />
-
-    <div v-if="showPushPrompt" class="push-prompt">
-      <span class="push-prompt-text">Get notified when {{ agentLabel(state.agent) }} finishes or needs you?</span>
-      <span class="push-prompt-actions">
-        <button class="push-enable" @click="togglePush">Enable</button>
-        <button class="push-dismiss" @click="pushDismissed = true">Not now</button>
-      </span>
-    </div>
 
     <Transcript ref="transcript" :messages="state.messages" :hide-fab="!!state.pending" @scrolled="shadow = $event">
       <template #empty>
@@ -63,7 +55,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSession } from '../composables/useSession'
 import { agentLabel } from '../constants'
 import { isImageType, fileExtLabel } from '../lib/format'
-import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
 import SessionHeader from '../components/SessionHeader.vue'
 import TasksSheet from '../components/TasksSheet.vue'
 import Transcript from '../components/Transcript.vue'
@@ -86,23 +77,6 @@ const shadow = ref(false)
 
 const showEmpty = computed(() => !state.closed && !state.messages.length && !isBusy.value)
 
-const pushSup = pushSupported()
-const pushOn = ref(false)
-const pushDismissed = ref(false)
-let pushReg = null
-const showPushPrompt = computed(() =>
-  pushSup && !pushOn.value && !pushDismissed.value && state.started && !state.closed &&
-  typeof Notification !== 'undefined' && Notification.permission === 'default')
-
-async function togglePush() {
-  try {
-    if (pushOn.value) { await disablePush(pushReg); pushOn.value = false; return }
-    if (!pushSup) { window.alert('Notifications need an HTTPS connection (use the public link).'); return }
-    const reg = await enablePush()
-    if (reg) { pushReg = reg; pushOn.value = true }
-  } catch (e) { /* ignore */ }
-}
-
 function goHome() { router.push('/') }
 function onClear() { clear() }
 function onClose() {
@@ -124,10 +98,8 @@ function onSend({ full, caption, snapshot }, done) {
 // Leaving the session (closed by daemon) returns home.
 watch(() => state.closed, (c) => { if (c) goHome() })
 
-onMounted(async () => {
+onMounted(() => {
   connect()
-  const reg = await existingSubscription().catch(() => null)
-  if (reg) { pushReg = reg; pushOn.value = true }
   if (window.innerWidth > 640 && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
     nextTick(() => composer.value && composer.value.focus())
   }

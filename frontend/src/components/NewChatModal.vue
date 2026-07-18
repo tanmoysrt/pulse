@@ -12,11 +12,11 @@
 
       <div class="modal-label">Directory</div>
       <div class="dir-bar">
-        <button class="dir-up" title="Parent" @click="load(parent)">↑</button>
+        <button class="dir-up" title="Parent" @click="load(parent)"><Icon name="arrow-up" :size="15" /></button>
         <span>{{ path || '…' }}</span>
       </div>
       <div class="dir-list">
-        <div v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)">📁 {{ name }}</div>
+        <div v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)"><Icon name="folder" :size="15" />{{ name }}</div>
         <div v-if="!dirs.length" class="dir-empty">No subfolders — Start uses this directory</div>
       </div>
 
@@ -33,6 +33,7 @@ import { ref, computed, onMounted } from 'vue'
 import { listDirs, spawnSession } from '../lib/api'
 import { AGENTS, AGENT_LABELS } from '../constants'
 import AgentLogo from './AgentLogo.vue'
+import Icon from './Icon.vue'
 
 const props = defineProps({ installed: { type: Array, default: () => [] } })
 const emit = defineEmits(['close', 'started'])

@@ -8,7 +8,7 @@
   </main>
   <div class="fab-slot">
     <button v-if="showFab" class="scroll-fab" @click="scrollDown(true)" aria-label="Scroll to bottom">
-      <svg width="14" height="14" viewBox="0 0 18 18"><path d="M4 7L9 12L14 7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <Icon name="arrow-down" :size="16" />
     </button>
   </div>
 </template>
@@ -16,6 +16,7 @@
 <script setup>
 import { ref, watch, nextTick, computed } from 'vue'
 import MessageItem from './MessageItem.vue'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
