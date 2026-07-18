@@ -13,7 +13,9 @@ export async function getJSON(url) {
 }
 
 export const listSessions = () => getJSON('/api/sessions')
-export const readHistory = (ref) => getJSON('/api/history?ref=' + encodeURIComponent(ref))
+// readHistory returns a page ending at `before` (exclusive), or the latest page.
+export const readHistory = (ref, before) =>
+  getJSON('/api/history?ref=' + encodeURIComponent(ref) + (before != null ? '&before=' + before : ''))
 export const listDirs = (path) => getJSON('/api/dirs' + (path ? '?path=' + encodeURIComponent(path) : ''))
 
 export async function spawnSession(agent, dir) {

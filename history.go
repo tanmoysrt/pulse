@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -34,6 +35,8 @@ func historyList() []listItem {
 	return all
 }
 
+// apiHistory returns one page of a transcript. Default is the last `limit`
+// messages; ?before=<start> yields the page preceding that index.
 func (d *Daemon) apiHistory(c echo.Context) error {
 	tool, locator, ok := parseRef(c.QueryParam("ref"))
 	if !ok {
@@ -43,10 +46,37 @@ func (d *Daemon) apiHistory(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	if msgs == nil {
-		msgs = []Message{}
+	total := len(msgs)
+	limit := queryInt(c, "limit", 50)
+	if limit <= 0 || limit > 1000 {
+		limit = 50
 	}
-	return c.JSON(http.StatusOK, map[string]any{"tool": tool, "messages": msgs})
+	end := queryInt(c, "before", total)
+	if end < 0 {
+		end = 0
+	} else if end > total {
+		end = total
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	page := msgs[start:end]
+	if page == nil {
+		page = []Message{}
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"tool": tool, "total": total, "start": start, "end": end, "messages": page,
+	})
+}
+
+func queryInt(c echo.Context, name string, def int) int {
+	if v := c.QueryParam(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 // resume describes how to relaunch a past session: the agent, its original

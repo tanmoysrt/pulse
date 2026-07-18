@@ -4,7 +4,10 @@
 
     <SessionHeader :title="title" :readonly="true" status="idle" :shadow="shadow" resumable @back="goHome" @resume="onResume" />
 
-    <Transcript :messages="messages" @scrolled="shadow = $event">
+    <Transcript :messages="messages" @scrolled="shadow = $event" @reachTop="loadMore">
+      <template #top>
+        <div v-if="loadingMore" class="load-earlier"><span class="think-dot"></span> Loading earlier messages…</div>
+      </template>
       <template #empty>
         <div v-if="!loading && !messages.length" class="empty">
           <h2>Empty transcript</h2>
@@ -26,8 +29,10 @@ const route = useRoute()
 const router = useRouter()
 
 const messages = ref([])
+const oldest = ref(0)
 const title = ref(route.query.t || 'Transcript')
 const loading = ref(true)
+const loadingMore = ref(false)
 const shadow = ref(false)
 
 function goHome() { router.push('/') }
@@ -39,10 +44,23 @@ async function onResume() {
   } catch (e) { window.alert('Could not resume: ' + e.message) }
 }
 
+async function loadMore() {
+  if (loadingMore.value || loading.value || oldest.value <= 0) return
+  loadingMore.value = true
+  try {
+    const d = await readHistory(route.params.ref, oldest.value)
+    const older = d.messages || []
+    if (older.length) messages.value = older.concat(messages.value)
+    oldest.value = d.start || 0
+  } catch (e) { /* keep what we have */ }
+  loadingMore.value = false
+}
+
 onMounted(async () => {
   try {
     const d = await readHistory(route.params.ref)
     messages.value = d.messages || []
+    oldest.value = d.start || 0
   } catch (e) { /* show empty */ }
   loading.value = false
 })

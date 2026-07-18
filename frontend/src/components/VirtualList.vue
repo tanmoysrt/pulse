@@ -13,10 +13,8 @@
 </template>
 
 <script setup>
-// Dynamic-height windowing: only rows near the viewport are in the DOM. Real
-// heights are measured after render (a ResizeObserver catches collapses, image
-// loads and streaming growth); when they differ from the estimate the first
-// visible row is held at its on-screen position so the scroll never jumps.
+// Dynamic-height windowing: only rows near the viewport are mounted; measured
+// heights feed the layout and the first visible row is held steady on changes.
 import { ref, computed, shallowRef, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 const props = defineProps({
@@ -37,8 +35,18 @@ const prefix = shallowRef([0]) // prefix[i] = top edge of item i
 const rowEls = new Map()
 const sizes = new Map()
 let stick = props.stickBottom
+let prevFirstKey = null
 
-const h = (i) => sizes.get(props.itemKey(props.items[i])) ?? props.estimate
+// Unmeasured rows use the running average of measured ones.
+let sizeSum = 0, sizeCount = 0
+function record(key, ht) {
+  if (sizes.has(key)) sizeSum -= sizes.get(key)
+  else sizeCount++
+  sizeSum += ht
+  sizes.set(key, ht)
+}
+const avg = () => (sizeCount ? sizeSum / sizeCount : props.estimate)
+const h = (i) => sizes.get(props.itemKey(props.items[i])) ?? avg()
 
 function rebuild() {
   const n = props.items.length
@@ -46,6 +54,24 @@ function rebuild() {
   pf[0] = 0
   for (let i = 0; i < n; i++) pf[i + 1] = pf[i] + h(i)
   prefix.value = pf
+}
+
+function captureAnchor() {
+  const el = viewport.value
+  const vpTop = el.getBoundingClientRect().top
+  for (const [k, node] of rowEls) {
+    const r = node.getBoundingClientRect()
+    if (r.bottom > vpTop + 1) return { k, top: r.top }
+  }
+  return null
+}
+function restoreAnchor(a) {
+  if (!a) return
+  const el = viewport.value, node = rowEls.get(a.k)
+  if (node) {
+    const delta = node.getBoundingClientRect().top - a.top
+    if (delta) { el.scrollTop += delta; scrollTop.value = el.scrollTop }
+  }
 }
 
 // largest i with pf[i] <= y
@@ -84,7 +110,7 @@ function measure() {
   let changed = false
   for (const [key, node] of rowEls) {
     const ht = node.offsetHeight
-    if (ht && sizes.get(key) !== ht) { sizes.set(key, ht); changed = true }
+    if (ht && sizes.get(key) !== ht) { record(key, ht); changed = true }
   }
   if (stick) {
     rebuild()
@@ -92,20 +118,9 @@ function measure() {
     return
   }
   if (!changed) return
-  // Hold the first visible row at its current on-screen position.
-  const vpTop = el.getBoundingClientRect().top
-  let anchor = null, anchorTop = 0
-  for (const node of rowEls.values()) {
-    const r = node.getBoundingClientRect()
-    if (r.bottom > vpTop + 1) { anchor = node; anchorTop = r.top; break }
-  }
+  const a = captureAnchor()
   rebuild()
-  nextTick(() => {
-    const v = viewport.value
-    if (!v || !anchor) return
-    const delta = anchor.getBoundingClientRect().top - anchorTop
-    if (delta) { v.scrollTop += delta; scrollTop.value = v.scrollTop }
-  })
+  nextTick(() => restoreAnchor(a))
 }
 
 function onScroll() {
@@ -118,6 +133,7 @@ function onScroll() {
 let ro
 onMounted(() => {
   rebuild()
+  prevFirstKey = props.items.length ? props.itemKey(props.items[0]) : null
   viewportH.value = viewport.value.clientHeight
   ro = new ResizeObserver(() => {
     if (viewport.value) viewportH.value = viewport.value.clientHeight
@@ -129,7 +145,28 @@ onMounted(() => {
 })
 onBeforeUnmount(() => { if (ro) ro.disconnect(); if (raf) cancelAnimationFrame(raf) })
 
-watch(() => props.items.length, () => { rebuild(); schedule() })
+watch(() => props.items.length, (n, old) => {
+  const firstKey = n ? props.itemKey(props.items[0]) : null
+  const prepended = n > old && firstKey !== prevFirstKey
+  prevFirstKey = firstKey
+  if (prepended && !stick) {
+    const el = viewport.value
+    const vpTop = el.getBoundingClientRect().top
+    let aKey = null, aOffset = 0
+    for (const [k, node] of rowEls) {
+      const r = node.getBoundingClientRect()
+      if (r.bottom > vpTop + 1) { aKey = k; aOffset = r.top - vpTop; break }
+    }
+    rebuild()
+    nextTick(() => {
+      const idx = props.items.findIndex((it) => props.itemKey(it) === aKey)
+      if (idx >= 0) { el.scrollTop = prefix.value[idx] - aOffset; scrollTop.value = el.scrollTop }
+      schedule()
+    })
+  } else {
+    rebuild(); schedule()
+  }
+})
 
 function scrollToBottom() {
   const el = viewport.value; if (!el) return

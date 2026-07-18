@@ -1,7 +1,7 @@
 <template>
   <VirtualList ref="vlist" tag="main" class="transcript" :items="messages" :item-key="keyOf"
     :estimate="72" stick-bottom @scroll="onScroll">
-    <template #before><slot name="empty" /></template>
+    <template #before><slot name="top" /><slot name="empty" /></template>
     <template #default="{ item }"><MessageItem :m="item" /></template>
     <template #after><slot name="after" /></template>
   </VirtualList>
@@ -22,7 +22,7 @@ const props = defineProps({
   messages: { type: Array, default: () => [] },
   hideFab: { type: Boolean, default: false },
 })
-const emit = defineEmits(['scrolled'])
+const emit = defineEmits(['scrolled', 'reachTop'])
 
 const vlist = ref(null)
 const atBottom = ref(true)
@@ -38,6 +38,7 @@ function onScroll() {
   const el = vlist.value?.viewport
   atBottom.value = vlist.value ? vlist.value.nearBottom() : true
   emit('scrolled', (el?.scrollTop || 0) > 4)
+  if (el && el.scrollTop < 400) emit('reachTop')
 }
 function toBottom() { vlist.value?.scrollToBottom() }
 // Sticking to the bottom on new messages is handled by VirtualList; this only
