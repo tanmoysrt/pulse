@@ -1,22 +1,22 @@
 <template>
-  <main ref="scroller" @scroll="onScroll">
-    <slot name="empty" />
-    <div class="messages">
-      <MessageItem v-for="m in messages" :key="m.line + ':' + m.kind + ':' + m.name" :m="m" />
-    </div>
-    <slot name="after" />
-  </main>
+  <VirtualList ref="vlist" tag="main" class="transcript" :items="messages" :item-key="keyOf"
+    :estimate="72" stick-bottom @scroll="onScroll">
+    <template #before><slot name="empty" /></template>
+    <template #default="{ item }"><MessageItem :m="item" /></template>
+    <template #after><slot name="after" /></template>
+  </VirtualList>
   <div class="fab-slot">
-    <button v-if="showFab" class="scroll-fab" @click="scrollDown(true)" aria-label="Scroll to bottom">
+    <button v-if="showFab" class="scroll-fab" @click="toBottom" aria-label="Scroll to bottom">
       <Icon name="arrow-down" :size="16" />
     </button>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, reactive, computed, provide } from 'vue'
 import MessageItem from './MessageItem.vue'
 import Icon from './Icon.vue'
+import VirtualList from './VirtualList.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -24,32 +24,27 @@ const props = defineProps({
 })
 const emit = defineEmits(['scrolled'])
 
-const scroller = ref(null)
+const vlist = ref(null)
 const atBottom = ref(true)
-const scrolled = ref(false)
-
 const showFab = computed(() => !atBottom.value && !props.hideFab)
 
-function nearBottom() {
-  const el = scroller.value
-  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 120
-}
-function scrollDown(force) {
-  if (!force && !nearBottom()) return
-  nextTick(() => { const el = scroller.value; if (el) el.scrollTop = el.scrollHeight })
-}
-function onScroll() {
-  const el = scroller.value
-  atBottom.value = nearBottom()
-  scrolled.value = (el?.scrollTop || 0) > 4
-  emit('scrolled', scrolled.value)
-}
+const keyOf = (m) => m.line + ':' + m.kind + ':' + m.name
 
-// Follow new messages only when the reader is already at the bottom.
-watch(() => props.messages.length, () => {
-  const stick = nearBottom()
-  nextTick(() => { if (stick) scrollDown(true) })
-})
+// Expanded thinking/tool blocks, kept here (not in the recycled row) so they
+// survive the virtualizer unmounting and remounting a message.
+provide('openStore', reactive({}))
+
+function onScroll() {
+  const el = vlist.value?.viewport
+  atBottom.value = vlist.value ? vlist.value.nearBottom() : true
+  emit('scrolled', (el?.scrollTop || 0) > 4)
+}
+function toBottom() { vlist.value?.scrollToBottom() }
+// Sticking to the bottom on new messages is handled by VirtualList; this only
+// covers the explicit "jump down after I send" case.
+function scrollDown(force) {
+  if (force || (vlist.value && vlist.value.nearBottom())) vlist.value?.scrollToBottom()
+}
 
 defineExpose({ scrollDown, atBottom })
 </script>

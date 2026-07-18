@@ -13,41 +13,31 @@
       </div>
     </div>
 
-    <div class="home-list">
-      <template v-if="live.length || history.length">
-        <template v-if="live.length">
-          <div class="home-section">Active</div>
-          <button v-for="s in live" :key="s.id" class="card" @click="open(s, true)">
-            <div class="agent-badge" :class="'agent-' + s.tool"><AgentLogo :tool="s.tool" /></div>
-            <div class="card-main">
-              <div class="card-title">{{ cardTitle(s) }}</div>
-              <div class="card-sub">{{ s.dir }}</div>
-            </div>
-            <div class="card-meta"><span class="live-dot">live</span></div>
-          </button>
-        </template>
-        <template v-if="history.length">
-          <div class="home-section">History</div>
-          <button v-for="s in history" :key="s.id" class="card" @click="open(s, false)">
-            <div class="agent-badge" :class="'agent-' + s.tool"><AgentLogo :tool="s.tool" /></div>
-            <div class="card-main">
-              <div class="card-title">{{ cardTitle(s) }}</div>
-              <div class="card-sub">{{ s.dir }}</div>
-            </div>
-            <div class="card-meta"><span class="card-time">{{ timeAgo(s.updated) }}</span></div>
-          </button>
-        </template>
+    <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
+      <template #default="{ item }">
+        <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
+        <button v-else class="card" @click="open(item.s, item.live)">
+          <div class="agent-badge" :class="'agent-' + item.s.tool"><AgentLogo :tool="item.s.tool" /></div>
+          <div class="card-main">
+            <div class="card-title">{{ cardTitle(item.s) }}</div>
+            <div class="card-sub">{{ item.s.dir }}</div>
+          </div>
+          <div class="card-meta">
+            <span v-if="item.live" class="live-dot">live</span>
+            <span v-else class="card-time">{{ timeAgo(item.s.updated) }}</span>
+          </div>
+        </button>
       </template>
-      <div v-else-if="error" class="home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
-      <div v-else-if="loaded" class="home-empty"><h2>No sessions yet</h2><p>Start one with “New chat”.</p></div>
-    </div>
+    </VirtualList>
+    <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
+    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Start one with “New chat”.</p></div>
 
     <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
@@ -56,6 +46,7 @@ import { pushSupported, existingSubscription, enablePush, disablePush } from '..
 import NewChatModal from '../components/NewChatModal.vue'
 import AgentLogo from '../components/AgentLogo.vue'
 import Icon from '../components/Icon.vue'
+import VirtualList from '../components/VirtualList.vue'
 
 const router = useRouter()
 const live = ref([])
@@ -82,6 +73,20 @@ async function toggleNotifs() {
 }
 
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
+
+// Flatten the two sections into one list the virtualizer can window over.
+const rows = computed(() => {
+  const out = []
+  if (live.value.length) {
+    out.push({ type: 'header', text: 'Active', key: 'sec-active' })
+    for (const s of live.value) out.push({ type: 'card', s, live: true, key: 'l' + s.id })
+  }
+  if (history.value.length) {
+    out.push({ type: 'header', text: 'History', key: 'sec-history' })
+    for (const s of history.value) out.push({ type: 'card', s, live: false, key: 'h' + s.id })
+  }
+  return out
+})
 
 function open(s, isLive) {
   const query = { a: s.tool, t: cardTitle(s) }
