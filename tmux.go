@@ -1,43 +1,41 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 )
 
-func tmuxRun(session string, env, args []string) error {
-	go tmuxHideChrome(session)
-	headless := func() bool {
-		fi, err := os.Stdout.Stat()
-		return err != nil || fi.Mode()&os.ModeCharDevice == 0
-	}()
-	flags := []string{"-2", "new-session", "-s", session}
-	if headless {
-		flags = append(flags, "-d")
+// tmuxSpawn creates a detached session running args in dir; clients attach separately.
+func tmuxSpawn(session, dir string, env, args []string) error {
+	flags := []string{"-2", "new-session", "-d", "-s", session}
+	if dir != "" {
+		flags = append(flags, "-c", dir)
 	}
 	for _, e := range env {
 		flags = append(flags, "-e", e)
 	}
 	flags = append(flags, args...)
-	if headless {
-		if err := exec.Command("tmux", flags...).Run(); err != nil {
-			return err
-		}
-		for exec.Command("tmux", "has-session", "-t", session).Run() == nil {
-			time.Sleep(time.Second)
-		}
-		return nil
+	if err := exec.Command("tmux", flags...).Run(); err != nil {
+		return err
 	}
-	cmd := exec.Command("tmux", flags...)
+	go tmuxHideChrome(session)
+	return nil
+}
+
+// tmuxAttach connects the current terminal to an existing session.
+func tmuxAttach(session string) error {
+	cmd := exec.Command("tmux", "attach", "-t", session)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func tmuxAlive(session string) bool {
+	return exec.Command("tmux", "has-session", "-t", session).Run() == nil
 }
 
 func tmuxHideChrome(session string) {
@@ -52,9 +50,6 @@ func tmuxHideChrome(session string) {
 	}
 	exec.Command("tmux", "set-option", "-ga", "terminal-overrides", ",*:Tc").Run()
 	exec.Command("tmux", "set-option", "-as", "terminal-features", ",*:RGB").Run()
-	// bind-key requires a live server, which only exists once the session
-	// above has actually been created (tmux doesn't auto-start one for it).
-	tmuxBindLinksKey()
 }
 
 func tmuxSendKey(session, key string) error {
@@ -63,32 +58,6 @@ func tmuxSendKey(session, key string) error {
 
 func tmuxKill(session string) error {
 	return exec.Command("tmux", "kill-session", "-t", session).Run()
-}
-
-// linksHotkey pops the session's URLs/QR back up. Deliberately obscure: -n
-// bindings apply server-wide to every window, not just pulse's own.
-const linksHotkey = "F12"
-
-func linksPath(session string) string {
-	return filepath.Join(os.TempDir(), "pulse-links-"+session+".txt")
-}
-
-// tmuxWriteLinks stashes the startup banner (URLs + QR) to a per-session file
-// so it can be redisplayed later without rerunning pulse or leaving the agent.
-func tmuxWriteLinks(session, content string) error {
-	return os.WriteFile(linksPath(session), []byte(content), 0o600)
-}
-
-// tmuxBindLinksKey registers a global popup binding that resolves the session's
-// links file at press-time via `display-message -p '#S'`. The indirection is
-// required: display-popup's command string is not format-expanded, so a literal
-// #{session_name} wouldn't work, and it lets concurrent pulse sessions share the
-// one binding without stomping on each other.
-func tmuxBindLinksKey() {
-	dir := os.TempDir()
-	cmd := fmt.Sprintf(`sess=$(tmux display-message -p '#S'); cat '%s/pulse-links-'"$sess"'.txt' 2>/dev/null || echo "(pulse: no link info for this session)"; printf '\nPress any key to close\n'; read -n 1`, dir)
-	exec.Command("tmux", "bind-key", "-n", linksHotkey,
-		"display-popup", "-E", "-w", "90%", "-h", "90%", "-T", " pulse ", cmd).Run()
 }
 
 func tmuxCapture(session string) string {

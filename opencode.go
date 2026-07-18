@@ -103,8 +103,8 @@ func ocPartMessages(role string, p ocPart) []Message {
 	return nil
 }
 
-func opencodePoll(ctx context.Context, s *Server, base, cwd string, launchedAt time.Time) {
-	sessionID := ""
+func opencodePoll(ctx context.Context, s *Session, base, cwd string, launchedAt time.Time, knownID string) {
+	sessionID := knownID
 	nextLine := 0
 	done := map[string]bool{}
 	pendingID := ""

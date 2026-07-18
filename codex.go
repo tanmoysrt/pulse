@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-func codexHookArgs(token string) []string {
+func codexHookArgs(id, token string) []string {
 	// Hook callbacks carry the token as a query param, same as the UI.
 	q := ""
 	if token != "" {
 		q = "?t=" + token
 	}
 	hook := func(path string, timeoutSec int) string {
-		cmd := fmt.Sprintf(`curl -sS --max-time %d -X POST http://127.0.0.1:$PULSE_PORT/hooks/%s%s -H "Content-Type: application/json" --data-binary @-`, timeoutSec, path, q)
+		cmd := fmt.Sprintf(`curl -sS --max-time %d -X POST http://127.0.0.1:$PULSE_PORT/hooks/%s/%s%s -H "Content-Type: application/json" --data-binary @-`, timeoutSec, id, path, q)
 		q, _ := json.Marshal(cmd)
 		return fmt.Sprintf(`[{hooks=[{type="command",command=%s,timeout=%d}]}]`, q, timeoutSec)
 	}

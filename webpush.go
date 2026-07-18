@@ -168,12 +168,12 @@ func encryptPayload(sub pushSub, plaintext []byte) ([]byte, error) {
 
 // sendPush posts one encrypted notification and returns the HTTP status so the
 // caller can prune subscriptions the push service has retired (404/410).
-func (s *Server) sendPush(sub pushSub, payload []byte) int {
+func (d *Daemon) sendPush(sub pushSub, payload []byte) int {
 	body, err := encryptPayload(sub, payload)
 	if err != nil {
 		return 0
 	}
-	auth, err := s.vapid.authHeader(sub.Endpoint)
+	auth, err := d.vapid.authHeader(sub.Endpoint)
 	if err != nil {
 		return 0
 	}
@@ -193,65 +193,65 @@ func (s *Server) sendPush(sub pushSub, payload []byte) int {
 	return resp.StatusCode
 }
 
-func (s *Server) pushAll(title, body string) {
-	s.mu.Lock()
-	v := s.vapid
-	subs := append([]pushSub(nil), s.pushSubs...)
-	s.mu.Unlock()
+func (d *Daemon) pushAll(title, body string) {
+	d.mu.Lock()
+	v := d.vapid
+	subs := append([]pushSub(nil), d.pushSubs...)
+	d.mu.Unlock()
 	if v == nil || len(subs) == 0 {
 		return
 	}
 	payload, _ := json.Marshal(map[string]string{"title": title, "body": body})
 	var dead []string
 	for _, sub := range subs {
-		if code := s.sendPush(sub, payload); code == http.StatusNotFound || code == http.StatusGone {
+		if code := d.sendPush(sub, payload); code == http.StatusNotFound || code == http.StatusGone {
 			dead = append(dead, sub.Endpoint)
 		}
 	}
 	if len(dead) > 0 {
-		s.pruneSubs(dead)
+		d.pruneSubs(dead)
 	}
 }
 
-func (s *Server) addSub(sub pushSub) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, e := range s.pushSubs {
+func (d *Daemon) addSub(sub pushSub) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, e := range d.pushSubs {
 		if e.Endpoint == sub.Endpoint {
 			return
 		}
 	}
-	s.pushSubs = append(s.pushSubs, sub)
+	d.pushSubs = append(d.pushSubs, sub)
 }
 
-func (s *Server) pruneSubs(dead []string) {
+func (d *Daemon) pruneSubs(dead []string) {
 	gone := map[string]bool{}
 	for _, d := range dead {
 		gone[d] = true
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	kept := s.pushSubs[:0]
-	for _, sub := range s.pushSubs {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	kept := d.pushSubs[:0]
+	for _, sub := range d.pushSubs {
 		if !gone[sub.Endpoint] {
 			kept = append(kept, sub)
 		}
 	}
-	s.pushSubs = kept
+	d.pushSubs = kept
 }
 
-func (s *Server) apiPushKey(c echo.Context) error {
-	if s.vapid == nil {
+func (d *Daemon) apiPushKey(c echo.Context) error {
+	if d.vapid == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "push unavailable"})
 	}
-	return c.JSON(http.StatusOK, map[string]string{"key": b64.EncodeToString(s.vapid.pub)})
+	return c.JSON(http.StatusOK, map[string]string{"key": b64.EncodeToString(d.vapid.pub)})
 }
 
-func (s *Server) apiPushSubscribe(c echo.Context) error {
+func (d *Daemon) apiPushSubscribe(c echo.Context) error {
 	var sub pushSub
 	if err := c.Bind(&sub); err != nil || sub.Endpoint == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid subscription"})
 	}
-	s.addSub(sub)
+	d.addSub(sub)
 	return c.NoContent(http.StatusOK)
 }

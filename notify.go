@@ -31,7 +31,7 @@ var cuteDoneMessages = []string{
 	"%s is done and looking rather pleased with itself 😌",
 }
 
-func (s *Server) agentName() string {
+func (s *Session) agentName() string {
 	name := s.agent
 	if name != "" {
 		name = string(name[0]-'a'+'A') + name[1:]
@@ -40,18 +40,18 @@ func (s *Server) agentName() string {
 }
 
 // notifyDone announces the agent finished its turn.
-func (s *Server) notifyDone() {
-	if s.quiet {
+func (s *Session) notifyDone() {
+	if s.d.quiet {
 		return
 	}
 	body := fmt.Sprintf(cuteDoneMessages[rand.Intn(len(cuteDoneMessages))], s.agentName())
 	go notify("✨ pulse", body, soundDone)
-	go s.pushAll("✨ pulse", body)
+	go s.d.pushAll("✨ pulse", body)
 }
 
 // notifyPermission announces the agent is waiting for tool approval.
-func (s *Server) notifyPermission(tool string) {
-	if s.quiet {
+func (s *Session) notifyPermission(tool string) {
+	if s.d.quiet {
 		return
 	}
 	body := fmt.Sprintf("%s wants to run %s. approve? 🔐", s.agentName(), tool)
@@ -59,7 +59,7 @@ func (s *Server) notifyPermission(tool string) {
 		body = fmt.Sprintf("%s needs your permission 🔐", s.agentName())
 	}
 	go notify("🔐 pulse: needs you", body, soundAlert)
-	go s.pushAll("🔐 pulse: needs you", body)
+	go s.d.pushAll("🔐 pulse: needs you", body)
 }
 
 // notify pops a native OS notification on Linux and macOS. Best-effort: any

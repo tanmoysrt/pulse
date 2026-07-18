@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 type PermissionReq struct {
@@ -33,15 +31,19 @@ type sseEvent struct {
 	data  []byte
 }
 
-type Server struct {
+type Session struct {
+	d                *Daemon
+	id               string
+	dir              string
+	createdAt        time.Time
+	ctx              context.Context
+	cancel           context.CancelFunc
+	cleanup          func()
+	closed           bool
 	mu               sync.Mutex
 	tmuxSession      string
 	agent            string
 	ocBase           string
-	token            string
-	quiet            bool
-	vapid            *vapidKey
-	pushSubs         []pushSub
 	started          bool
 	sessionID        string
 	transcriptPath   string
@@ -64,18 +66,25 @@ type Server struct {
 	tailCancel       context.CancelFunc
 }
 
-func newServer(tmuxSession, agent string) *Server {
-	return &Server{
+func newSession(d *Daemon, id, tmuxSession, agent, dir string) *Session {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Session{
+		d:           d,
+		id:          id,
+		dir:         dir,
+		createdAt:   time.Now(),
+		ctx:         ctx,
+		cancel:      cancel,
+		cleanup:     func() {},
 		tmuxSession: tmuxSession,
 		agent:       agent,
 		status:      "idle",
 		subs:        map[chan sseEvent]struct{}{},
 		hiddenTasks: map[string]bool{},
-		vapid:       loadOrCreateVapid(),
 	}
 }
 
-func (s *Server) broadcast(ev sseEvent) {
+func (s *Session) broadcast(ev sseEvent) {
 	for ch := range s.subs {
 		select {
 		case ch <- ev:
@@ -85,7 +94,7 @@ func (s *Server) broadcast(ev sseEvent) {
 }
 
 // watching reports whether any browser is connected to the SSE stream.
-func (s *Server) watching() bool {
+func (s *Session) watching() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.subs) > 0
@@ -105,7 +114,7 @@ type stateSnapshot struct {
 	Started   bool           `json:"started"`
 }
 
-func (s *Server) stateEvent() sseEvent {
+func (s *Session) stateEvent() sseEvent {
 	data, _ := json.Marshal(stateSnapshot{
 		Status: s.status, Title: s.title, Pending: s.pending,
 		Model: s.model, ModelName: s.modelName, Mode: s.mode, Effort: s.effort,
@@ -120,28 +129,28 @@ func messageEvent(m Message) sseEvent {
 }
 
 // markStarted flips the UI out of its boot state once the agent is launched.
-func (s *Server) markStarted() {
+func (s *Session) markStarted() {
 	s.mu.Lock()
 	s.started = true
 	s.broadcast(s.stateEvent())
 	s.mu.Unlock()
 }
 
-func (s *Server) setStatus(status string) {
+func (s *Session) setStatus(status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status = status
 	s.broadcast(s.stateEvent())
 }
 
-func (s *Server) appendMessage(m Message) {
+func (s *Session) appendMessage(m Message) {
 	s.mu.Lock()
 	s.messages = append(s.messages, m)
 	s.broadcast(messageEvent(m))
 	s.mu.Unlock()
 }
 
-func (s *Server) setMeta(title, model string) {
+func (s *Session) setMeta(title, model string) {
 	s.mu.Lock()
 	changed := false
 	if title != "" && title != s.title {
@@ -156,7 +165,7 @@ func (s *Server) setMeta(title, model string) {
 	s.mu.Unlock()
 }
 
-func (s *Server) opencodeAskPermission(extID, toolName string, toolInput json.RawMessage) {
+func (s *Session) opencodeAskPermission(extID, toolName string, toolInput json.RawMessage) {
 	s.mu.Lock()
 	s.nextPermID++
 	s.pending = &PermissionReq{ID: s.nextPermID, ToolName: toolName, ToolInput: toolInput, extID: extID}
@@ -166,7 +175,7 @@ func (s *Server) opencodeAskPermission(extID, toolName string, toolInput json.Ra
 	s.notifyPermission(toolName)
 }
 
-func (s *Server) opencodeClearPermission(extID string) {
+func (s *Session) opencodeClearPermission(extID string) {
 	s.mu.Lock()
 	if s.pending != nil && s.pending.extID == extID {
 		s.pending = nil
@@ -176,7 +185,7 @@ func (s *Server) opencodeClearPermission(extID string) {
 	s.mu.Unlock()
 }
 
-func (s *Server) adoptSession(sessionID, transcriptPath string) {
+func (s *Session) adoptSession(sessionID, transcriptPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sessionID != "" {
@@ -187,13 +196,13 @@ func (s *Server) adoptSession(sessionID, transcriptPath string) {
 		if s.tailCancel != nil {
 			s.tailCancel()
 		}
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(s.ctx)
 		s.tailCancel = cancel
 		go tailTranscript(ctx, transcriptPath, s.onTranscriptLine)
 	}
 }
 
-func (s *Server) hookSessionStart(c echo.Context) error {
+func (s *Session) hookSessionStart(c echo.Context) error {
 	var in struct {
 		SessionID      string `json:"session_id"`
 		TranscriptPath string `json:"transcript_path"`
@@ -205,7 +214,7 @@ func (s *Server) hookSessionStart(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) onTranscriptLine(lineNo int, raw []byte) {
+func (s *Session) onTranscriptLine(lineNo int, raw []byte) {
 	parse := lineParser(parseLine)
 	if s.agent == "codex" {
 		parse = parseCodexLine
@@ -236,7 +245,7 @@ func (s *Server) onTranscriptLine(lineNo int, raw []byte) {
 	s.mu.Unlock()
 }
 
-func (s *Server) applyTaskOps(ops []taskOp) {
+func (s *Session) applyTaskOps(ops []taskOp) {
 	find := func(id string) int {
 		for i, t := range s.taskIDs {
 			if t == id {
@@ -275,7 +284,7 @@ func (s *Server) applyTaskOps(ops []taskOp) {
 	}
 }
 
-func (s *Server) hookPermission(c echo.Context) error {
+func (s *Session) hookPermission(c echo.Context) error {
 	var in struct {
 		SessionID      string          `json:"session_id"`
 		TranscriptPath string          `json:"transcript_path"`
@@ -315,7 +324,7 @@ func (s *Server) hookPermission(c echo.Context) error {
 	})
 }
 
-func (s *Server) clearPending(id int, status string) {
+func (s *Session) clearPending(id int, status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pending != nil && s.pending.ID == id {
@@ -325,7 +334,7 @@ func (s *Server) clearPending(id int, status string) {
 	}
 }
 
-func (s *Server) hookStop(c echo.Context) error {
+func (s *Session) hookStop(c echo.Context) error {
 	var in struct {
 		SessionID      string `json:"session_id"`
 		TranscriptPath string `json:"transcript_path"`
@@ -338,7 +347,7 @@ func (s *Server) hookStop(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) apiEvents(c echo.Context) error {
+func (s *Session) apiEvents(c echo.Context) error {
 	w := c.Response()
 	w.Header().Set(echo.HeaderContentType, "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -399,7 +408,7 @@ func (s *Server) apiEvents(c echo.Context) error {
 	}
 }
 
-func (s *Server) apiSend(c echo.Context) error {
+func (s *Session) apiSend(c echo.Context) error {
 	var in struct {
 		Text string `json:"text"`
 	}
@@ -413,7 +422,7 @@ func (s *Server) apiSend(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) apiPermission(c echo.Context) error {
+func (s *Session) apiPermission(c echo.Context) error {
 	var in struct {
 		ID       int    `json:"id"`
 		Decision string `json:"decision"`
@@ -442,7 +451,7 @@ func (s *Server) apiPermission(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) apiInterrupt(c echo.Context) error {
+func (s *Session) apiInterrupt(c echo.Context) error {
 	if err := tmuxSendKey(s.tmuxSession, "Escape"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -450,17 +459,16 @@ func (s *Server) apiInterrupt(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// apiClose kills the agent session; pulse's main loop then exits with it.
-func (s *Server) apiClose(c echo.Context) error {
-	if err := tmuxKill(s.tmuxSession); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
+// apiClose ends this agent session (kills its tmux, stops its goroutines) and
+// unregisters it from the daemon, which keeps running.
+func (s *Session) apiClose(c echo.Context) error {
+	s.d.remove(s.id)
 	return c.NoContent(http.StatusOK)
 }
 
 // uploadDir stages attached files. Every agent CLI reads a plain absolute path
 // typed into the prompt, so the UI just needs somewhere to drop the upload.
-func (s *Server) uploadDir() string {
+func (s *Session) uploadDir() string {
 	return filepath.Join(os.TempDir(), "pulse-uploads-"+s.tmuxSession)
 }
 
@@ -468,7 +476,7 @@ var safeUploadExt = regexp.MustCompile(`^\.[A-Za-z0-9]{1,10}$`)
 
 const maxUploadSize = 20 << 20 // 20MB
 
-func (s *Server) apiUpload(c echo.Context) error {
+func (s *Session) apiUpload(c echo.Context) error {
 	fh, err := c.FormFile("file")
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "file required"})
@@ -513,7 +521,7 @@ var clearCommands = map[string]string{"claude": "/clear", "codex": "/clear", "op
 
 // apiClear clears the agent's context and wipes pulse's replay buffer so the
 // old history doesn't reappear on reconnect.
-func (s *Server) apiClear(c echo.Context) error {
+func (s *Session) apiClear(c echo.Context) error {
 	if cmd := clearCommands[s.agent]; cmd != "" {
 		if err := tmuxSendText(s.tmuxSession, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -534,7 +542,7 @@ var modelAliases = map[string]bool{
 	"default": true, "opus": true, "sonnet": true, "haiku": true, "opusplan": true,
 }
 
-func (s *Server) apiModel(c echo.Context) error {
+func (s *Session) apiModel(c echo.Context) error {
 	var in struct {
 		Model string `json:"model"`
 		Label string `json:"label"`
@@ -561,13 +569,13 @@ func (s *Server) apiModel(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) holdChips() {
+func (s *Session) holdChips() {
 	s.mu.Lock()
 	s.modelSwitchUntil = time.Now().Add(3 * time.Second)
 	s.mu.Unlock()
 }
 
-func (s *Server) beginModelSwitch(label string) {
+func (s *Session) beginModelSwitch(label string) {
 	s.holdChips()
 	if label != "" {
 		s.mu.Lock()
@@ -577,7 +585,7 @@ func (s *Server) beginModelSwitch(label string) {
 	}
 }
 
-func (s *Server) apiModels(c echo.Context) error {
+func (s *Session) apiModels(c echo.Context) error {
 	models := []map[string]string{}
 	if s.agent == "opencode" {
 		if m := opencodeModels(s.ocBase); m != nil {
@@ -587,7 +595,7 @@ func (s *Server) apiModels(c echo.Context) error {
 	return c.JSON(http.StatusOK, models)
 }
 
-func (s *Server) confirmDialog() {
+func (s *Session) confirmDialog() {
 	go func() {
 		time.Sleep(700 * time.Millisecond)
 		tmuxSendKey(s.tmuxSession, "Enter")
@@ -598,7 +606,7 @@ var effortLevels = map[string]bool{
 	"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
 }
 
-func (s *Server) apiEffort(c echo.Context) error {
+func (s *Session) apiEffort(c echo.Context) error {
 	var in struct {
 		Level string `json:"level"`
 	}
@@ -631,7 +639,7 @@ func modeIndex(m string) int {
 	return -1
 }
 
-func (s *Server) apiMode(c echo.Context) error {
+func (s *Session) apiMode(c echo.Context) error {
 	var in struct {
 		Mode string `json:"mode"`
 	}
@@ -663,7 +671,7 @@ func (s *Server) apiMode(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) pollMode() {
+func (s *Session) pollMode() {
 	parseCurMode := parseMode
 	switch s.agent {
 	case "codex":
@@ -673,7 +681,17 @@ func (s *Server) pollMode() {
 	}
 	t := time.NewTicker(1500 * time.Millisecond)
 	defer t.Stop()
-	for range t.C {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-t.C:
+		}
+		// The agent exited (or its session was killed): reap and stop.
+		if !tmuxAlive(s.tmuxSession) {
+			go s.d.remove(s.id)
+			return
+		}
 		// No one is watching the UI, so skip the tmux subprocess entirely.
 		if !s.watching() {
 			continue
@@ -716,60 +734,4 @@ func (s *Server) pollMode() {
 		}
 		s.mu.Unlock()
 	}
-}
-
-func startServer(s *Server, ln net.Listener) {
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-	if s.token != "" {
-		e.Use(authMiddleware(s.token))
-	}
-	e.Use(middleware.BodyLimit(fmt.Sprintf("%dM", maxUploadSize/(1<<20)+1)))
-	if os.Getenv("PULSE_DEBUG") != "" {
-		e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error {
-				err := next(c)
-				fmt.Printf("pulse: %s %s -> %d\n", c.Request().Method, c.Request().URL.Path, c.Response().Status)
-				return err
-			}
-		})
-	}
-
-	e.POST("/hooks/session-start", s.hookSessionStart)
-	e.POST("/hooks/permission", s.hookPermission)
-	e.POST("/hooks/stop", s.hookStop)
-
-	e.GET("/api/events", s.apiEvents)
-	e.POST("/api/send", s.apiSend)
-	e.POST("/api/upload", s.apiUpload)
-	e.POST("/api/permission", s.apiPermission)
-	e.POST("/api/interrupt", s.apiInterrupt)
-	e.POST("/api/close", s.apiClose)
-	e.POST("/api/clear", s.apiClear)
-	e.POST("/api/model", s.apiModel)
-	e.GET("/api/models", s.apiModels)
-	e.POST("/api/effort", s.apiEffort)
-	e.POST("/api/mode", s.apiMode)
-	e.GET("/api/push/key", s.apiPushKey)
-	e.POST("/api/push/subscribe", s.apiPushSubscribe)
-
-	e.GET("/", func(c echo.Context) error {
-		return c.HTMLBlob(http.StatusOK, indexHTML)
-	})
-	e.GET("/sw.js", func(c echo.Context) error {
-		return c.Blob(http.StatusOK, "application/javascript", swJS)
-	})
-	e.GET("/manifest.webmanifest", func(c echo.Context) error {
-		return c.Blob(http.StatusOK, "application/manifest+json", manifestJSON)
-	})
-
-	go s.pollMode()
-
-	e.Listener = ln
-	go func() {
-		if err := e.Start(""); err != nil && err != http.ErrServerClosed {
-			fmt.Println("pulse: server error:", err)
-		}
-	}()
 }

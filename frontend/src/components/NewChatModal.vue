@@ -1,0 +1,64 @@
+<template>
+  <div class="modal-backdrop" @click.self="$emit('close')">
+    <div class="modal">
+      <h3>New chat</h3>
+
+      <div class="modal-label">Agent</div>
+      <div class="seg">
+        <button v-for="a in AGENTS" :key="a" :class="{ on: agent === a }" @click="agent = a">{{ AGENT_LABELS[a] }}</button>
+      </div>
+
+      <div class="modal-label">Directory</div>
+      <div class="dir-bar">
+        <button class="dir-up" title="Parent" @click="load(parent)">↑</button>
+        <span>{{ path || '…' }}</span>
+      </div>
+      <div class="dir-list">
+        <div v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)">📁 {{ name }}</div>
+        <div v-if="!dirs.length" class="dir-empty">No subfolders — Start uses this directory</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-start" :disabled="!path || starting" @click="start">{{ starting ? 'Starting…' : 'Start' }}</button>
+        <button class="modal-cancel" @click="$emit('close')">Cancel</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { listDirs, spawnSession } from '../lib/api'
+import { AGENTS, AGENT_LABELS } from '../constants'
+
+const emit = defineEmits(['close', 'started'])
+
+const agent = ref('claude')
+const path = ref('')
+const parent = ref('')
+const dirs = ref([])
+const starting = ref(false)
+
+async function load(p) {
+  try {
+    const d = await listDirs(p)
+    path.value = d.path
+    parent.value = d.parent
+    dirs.value = d.dirs || []
+  } catch (e) { /* keep current */ }
+}
+function enter(name) { load(path.value.replace(/\/+$/, '') + '/' + name) }
+
+async function start() {
+  starting.value = true
+  try {
+    const d = await spawnSession(agent.value, path.value)
+    emit('started', { id: d.id, agent: agent.value })
+  } catch (err) {
+    starting.value = false
+    window.alert('Could not start: ' + err.message)
+  }
+}
+
+onMounted(() => load(''))
+</script>

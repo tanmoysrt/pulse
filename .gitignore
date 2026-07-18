@@ -2,9 +2,10 @@
 /pulse
 /dist/
 
-# Node / frontend tooling (UI is a single hand-written web/index.html; no build step)
-web/node_modules/
-web/dist/
+# Frontend tooling. The UI is a Vite+Vue app in frontend/; its build output is
+# the committed, self-contained web/index.html that Go embeds.
+frontend/node_modules/
+frontend/dist/
 
 # Go
 *.test
