@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -63,9 +64,11 @@ func (d *Daemon) remove(id string) {
 	tmuxKill(s.tmuxSession)
 	s.cleanup()
 	os.RemoveAll(s.uploadDir())
+	d.persist()
 }
 
-// shutdown ends every session; called when the daemon exits.
+// shutdown ends every session (killing their tmux) and clears all state;
+// called when the user chooses to stop everything.
 func (d *Daemon) shutdown() {
 	d.mu.Lock()
 	ids := make([]string, 0, len(d.sessions))
@@ -77,6 +80,20 @@ func (d *Daemon) shutdown() {
 		d.remove(id)
 	}
 	removeState()
+	removeSessions()
+}
+
+// detach stops the daemon but leaves every tmux session running; a later
+// restart reconciles them from the persisted registry.
+func (d *Daemon) detach() {
+	d.persist()
+	removeState()
+}
+
+func (d *Daemon) count() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.sessions)
 }
 
 // spawn launches an agent in a detached tmux session wired to per-session
@@ -136,7 +153,79 @@ func (d *Daemon) spawn(agent, dir string, agentArgs []string, r *resume) (*Sessi
 		}
 		go opencodePoll(s.ctx, s, s.ocBase, dir, time.Now(), knownID)
 	}
+	d.persist()
 	return s, nil
+}
+
+// sessionRecord is a persisted hint about a live session. tmux is the source of
+// truth: on restart a record whose tmux session is gone is discarded.
+type sessionRecord struct {
+	ID         string `json:"id"`
+	Agent      string `json:"agent"`
+	Dir        string `json:"dir"`
+	Tmux       string `json:"tmux"`
+	Transcript string `json:"transcript,omitempty"`
+	SessionID  string `json:"sessionID,omitempty"`
+	OCBase     string `json:"ocBase,omitempty"`
+	CreatedAt  int64  `json:"createdAt"`
+}
+
+// persist snapshots the live sessions to disk so a restarted daemon can adopt
+// any that are still running in tmux.
+func (d *Daemon) persist() {
+	d.mu.Lock()
+	recs := make([]sessionRecord, 0, len(d.sessions))
+	for _, s := range d.sessions {
+		s.mu.Lock()
+		recs = append(recs, sessionRecord{
+			ID: s.id, Agent: s.agent, Dir: s.dir, Tmux: s.tmuxSession,
+			Transcript: s.transcriptPath, SessionID: s.sessionID, OCBase: s.ocBase,
+			CreatedAt: s.createdAt.UnixMilli(),
+		})
+		s.mu.Unlock()
+	}
+	d.mu.Unlock()
+	writeSessions(recs)
+}
+
+// reconcile re-adopts tmux sessions recorded before a restart that are still
+// alive, and prunes the rest. It trusts tmux, not the file.
+func (d *Daemon) reconcile() {
+	recs, _ := readSessions()
+	maxSeq := 0
+	for _, r := range recs {
+		if n, err := strconv.Atoi(r.ID); err == nil && n > maxSeq {
+			maxSeq = n
+		}
+		if !tmuxAlive(r.Tmux) {
+			continue
+		}
+		s := newSession(d, r.ID, r.Tmux, r.Agent, r.Dir)
+		s.ocBase = r.OCBase
+		if r.CreatedAt > 0 {
+			s.createdAt = time.UnixMilli(r.CreatedAt)
+		}
+		d.mu.Lock()
+		d.sessions[r.ID] = s
+		d.mu.Unlock()
+		s.markStarted()
+		go s.pollMode()
+		if r.Agent == "opencode" {
+			go opencodePoll(s.ctx, s, s.ocBase, r.Dir, s.createdAt, r.SessionID)
+		} else if r.Transcript != "" {
+			s.adoptSession(r.SessionID, r.Transcript)
+		}
+	}
+	d.mu.Lock()
+	if maxSeq > d.seq {
+		d.seq = maxSeq
+	}
+	n := len(d.sessions)
+	d.mu.Unlock()
+	d.persist()
+	if n > 0 {
+		fmt.Printf("pulse: reconciled %d running session(s)\n", n)
+	}
 }
 
 // listItem is one row in the UI list: a live session or a past transcript.
@@ -163,7 +252,18 @@ func (d *Daemon) apiList(c echo.Context) error {
 	}
 	d.mu.Unlock()
 	sort.Slice(live, func(i, j int) bool { return live[i].Updated > live[j].Updated })
-	return c.JSON(http.StatusOK, map[string]any{"live": live, "history": historyList()})
+	return c.JSON(http.StatusOK, map[string]any{"live": live, "history": historyList(), "installed": installedAgents()})
+}
+
+// installedAgents lists the agents whose CLI is on PATH, newest-first order.
+func installedAgents() []string {
+	out := []string{}
+	for _, a := range []string{"claude", "codex", "opencode"} {
+		if _, err := exec.LookPath(a); err == nil {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func (d *Daemon) apiSpawn(c echo.Context) error {
@@ -205,7 +305,7 @@ func (d *Daemon) apiSpawn(c echo.Context) error {
 func (d *Daemon) apiDirs(c echo.Context) error {
 	path := c.QueryParam("path")
 	if path == "" {
-		path, _ = os.UserHomeDir()
+		path, _ = os.Getwd() // default to where the daemon was started
 	}
 	path = filepath.Clean(path)
 	entries, err := os.ReadDir(path)
@@ -322,3 +422,22 @@ func readState() (*daemonState, error) {
 }
 
 func removeState() { os.Remove(statePath()) }
+
+func sessionsPath() string { return filepath.Join(filepath.Dir(statePath()), "sessions.json") }
+
+func writeSessions(recs []sessionRecord) {
+	b, _ := json.Marshal(recs)
+	os.MkdirAll(filepath.Dir(sessionsPath()), 0o700)
+	os.WriteFile(sessionsPath(), b, 0o600)
+}
+
+func readSessions() ([]sessionRecord, error) {
+	b, err := os.ReadFile(sessionsPath())
+	if err != nil {
+		return nil, err
+	}
+	var recs []sessionRecord
+	return recs, json.Unmarshal(b, &recs)
+}
+
+func removeSessions() { os.Remove(sessionsPath()) }

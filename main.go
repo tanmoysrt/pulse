@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
@@ -20,16 +22,84 @@ var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": tru
 const defaultPort = 7420
 
 func main() {
-	agent, agentArgs, local, noAuth, quiet := parseArgs(os.Args[1:])
+	args := os.Args[1:]
+	if len(args) > 0 {
+		switch args[0] {
+		case "ls":
+			runList()
+			return
+		case "attach":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "usage: pulse attach <id>")
+				os.Exit(2)
+			}
+			runAttach(args[1])
+			return
+		}
+	}
+	agent, agentArgs, local, noAuth, quiet := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--local] [--no-auth] [--quiet] [<claude|codex|opencode> [agent args...]]")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--local] [--no-auth] [--quiet] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
 		return
 	}
 	runDaemon(local, noAuth, quiet)
+}
+
+// runList prints the daemon's live sessions.
+func runList() {
+	live, err := daemonSessions()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse:", err)
+		os.Exit(1)
+	}
+	if len(live) == 0 {
+		fmt.Println("no running sessions")
+		return
+	}
+	fmt.Printf("%-4s %-9s %-12s %s\n", "ID", "AGENT", "STATUS", "DIR")
+	for _, s := range live {
+		fmt.Printf("%-4s %-9s %-12s %s\n", s.ID, s.Tool, s.Status, s.Dir)
+	}
+	fmt.Println("\nattach with:  pulse attach <id>")
+}
+
+// runAttach connects the terminal to a running session's tmux by id.
+func runAttach(id string) {
+	session := "pulse-" + id
+	if !tmuxAlive(session) {
+		fmt.Fprintln(os.Stderr, "pulse: no running session with id "+id+" (see: pulse ls)")
+		os.Exit(1)
+	}
+	if err := tmuxAttach(session); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: attach failed:", err)
+		os.Exit(1)
+	}
+}
+
+// daemonSessions fetches the live session list from a running daemon.
+func daemonSessions() ([]listItem, error) {
+	st, err := readState()
+	if err != nil {
+		return nil, fmt.Errorf("no daemon running")
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions", st.Port)
+	if st.Token != "" {
+		url += "?t=" + st.Token
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("cannot reach daemon: %w", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Live []listItem `json:"live"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	return out.Live, nil
 }
 
 // runClient asks the daemon to spawn an agent, then attaches to its tmux.
@@ -79,16 +149,60 @@ func runDaemon(local, noAuth, quiet bool) {
 
 	ln, port := listen(bindHost, defaultPort)
 	d := newDaemon(token, quiet, port)
+	d.reconcile()
 	startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
 
 	fmt.Print(daemonBanner(d, local, port))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	<-ctx.Done()
-	fmt.Println("\npulse: shutting down…")
-	d.shutdown()
+	stop() // restore default handler so a second Ctrl-C force-quits
+	handleShutdown(d)
+}
+
+// handleShutdown asks whether to stop running sessions before exiting. Sessions
+// live in detached tmux, so declining just leaves them for the next restart.
+func handleShutdown(d *Daemon) {
+	n := d.count()
+	if n == 0 {
+		fmt.Println("\npulse: shutting down…")
+		d.shutdown()
+		return
+	}
+	if promptStopAll(n) {
+		fmt.Println("pulse: stopping all sessions…")
+		d.shutdown()
+		return
+	}
+	fmt.Printf("pulse: leaving %d session(s) running (reattach: pulse attach <id>)\n", n)
+	d.detach()
+}
+
+// promptStopAll asks the user y/N with a 60s timeout; the default (and the
+// answer when there's no terminal) is to leave sessions running.
+func promptStopAll(n int) bool {
+	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	fmt.Printf("\npulse: %d session(s) still running. Stop all of them? [y/N] (60s) ", n)
+	ans := make(chan bool, 1)
+	go func() {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			ans <- false
+			return
+		}
+		a := strings.ToLower(strings.TrimSpace(line))
+		ans <- a == "y" || a == "yes"
+	}()
+	select {
+	case v := <-ans:
+		return v
+	case <-time.After(60 * time.Second):
+		fmt.Println("\npulse: timed out — leaving sessions running")
+		return false
+	}
 }
 
 // daemonBanner is the startup blurb: UI URLs plus a QR of the best one.
@@ -134,7 +248,7 @@ func daemonBanner(d *Daemon, local bool, port int) string {
 			fmt.Fprintf(&b, "Scan to open  %s\n\n%s\n", qrURL, qr)
 		}
 	}
-	fmt.Fprintf(&b, "Also runnable from any terminal: `pulse claude` spawns a session here and attaches.\nPress Ctrl-C to stop the daemon.\n")
+	fmt.Fprintf(&b, "From any terminal: `pulse claude` spawns a session and attaches; `pulse ls` lists them, `pulse attach <id>` reattaches.\nCtrl-C asks whether to stop running sessions (they otherwise keep running for the next start).\n")
 	return b.String()
 }
 

@@ -187,18 +187,22 @@ func (s *Session) opencodeClearPermission(extID string) {
 
 func (s *Session) adoptSession(sessionID, transcriptPath string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if sessionID != "" {
-		s.sessionID = sessionID
+	changed := false
+	if sessionID != "" && sessionID != s.sessionID {
+		s.sessionID, changed = sessionID, true
 	}
 	if transcriptPath != "" && transcriptPath != s.transcriptPath {
-		s.transcriptPath = transcriptPath
+		s.transcriptPath, changed = transcriptPath, true
 		if s.tailCancel != nil {
 			s.tailCancel()
 		}
 		ctx, cancel := context.WithCancel(s.ctx)
 		s.tailCancel = cancel
 		go tailTranscript(ctx, transcriptPath, s.onTranscriptLine)
+	}
+	s.mu.Unlock()
+	if changed {
+		go s.d.persist() // record the locator for restart reconciliation
 	}
 }
 

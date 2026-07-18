@@ -105,6 +105,7 @@ func ocPartMessages(role string, p ocPart) []Message {
 
 func opencodePoll(ctx context.Context, s *Session, base, cwd string, launchedAt time.Time, knownID string) {
 	sessionID := knownID
+	recorded := false
 	nextLine := 0
 	done := map[string]bool{}
 	pendingID := ""
@@ -123,7 +124,15 @@ func opencodePoll(ctx context.Context, s *Session, base, cwd string, launchedAt 
 					}
 				}
 			}
-		} else {
+		}
+		if sessionID != "" && !recorded {
+			recorded = true
+			s.mu.Lock()
+			s.sessionID = sessionID
+			s.mu.Unlock()
+			go s.d.persist()
+		}
+		if sessionID != "" {
 			var sess ocSession
 			if ocGet(base, "/session/"+sessionID, &sess) == nil {
 				s.setMeta(sess.Title, "")
