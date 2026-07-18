@@ -33,5 +33,5 @@ Needs `tmux`, the agent CLIs you use, and `sqlite3` for OpenCode history.
 The daemon runs each session in a detached tmux, tails its transcript, and
 streams it to the browser over SSE; it never touches your global agent config.
 History is read from each tool's own store (`~/.claude`, `~/.codex`, OpenCode's
-SQLite). The UI is a Vue app built into a single self-contained `web/index.html`
-that the binary embeds.
+SQLite). The UI is a Vue app built into a single self-contained
+`frontend/dist/index.html` that the binary embeds.

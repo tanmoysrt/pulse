@@ -2,10 +2,9 @@
 /pulse
 /dist/
 
-# Frontend tooling. The UI is a Vite+Vue app in frontend/; its build output is
-# the committed, self-contained web/index.html that Go embeds.
+# Frontend tooling. The UI is a Vite+Vue app in frontend/; its build output
+# (frontend/dist/) is committed so the Go binary can embed it.
 frontend/node_modules/
-frontend/dist/
 
 # Go
 *.test
