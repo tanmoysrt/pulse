@@ -39,6 +39,9 @@ type Server struct {
 	agent            string
 	ocBase           string
 	token            string
+	quiet            bool
+	vapid            *vapidKey
+	pushSubs         []pushSub
 	started          bool
 	sessionID        string
 	transcriptPath   string
@@ -68,6 +71,7 @@ func newServer(tmuxSession, agent string) *Server {
 		status:      "idle",
 		subs:        map[chan sseEvent]struct{}{},
 		hiddenTasks: map[string]bool{},
+		vapid:       loadOrCreateVapid(),
 	}
 }
 
@@ -80,9 +84,33 @@ func (s *Server) broadcast(ev sseEvent) {
 	}
 }
 
+// watching reports whether any browser is connected to the SSE stream.
+func (s *Server) watching() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.subs) > 0
+}
+
+// stateSnapshot is the JSON shape pushed on every "state" SSE event.
+type stateSnapshot struct {
+	Status    string         `json:"status"`
+	Title     string         `json:"title"`
+	Pending   *PermissionReq `json:"pending"`
+	Model     string         `json:"model"`
+	ModelName string         `json:"modelName"`
+	Mode      string         `json:"mode"`
+	Effort    string         `json:"effort"`
+	Todos     []Todo         `json:"todos"`
+	Agent     string         `json:"agent"`
+	Started   bool           `json:"started"`
+}
+
 func (s *Server) stateEvent() sseEvent {
-	st := map[string]any{"status": s.status, "title": s.title, "pending": s.pending, "model": s.model, "modelName": s.modelName, "mode": s.mode, "effort": s.effort, "todos": s.todos, "agent": s.agent, "started": s.started}
-	data, _ := json.Marshal(st)
+	data, _ := json.Marshal(stateSnapshot{
+		Status: s.status, Title: s.title, Pending: s.pending,
+		Model: s.model, ModelName: s.modelName, Mode: s.mode, Effort: s.effort,
+		Todos: s.todos, Agent: s.agent, Started: s.started,
+	})
 	return sseEvent{event: "state", data: data}
 }
 
@@ -91,8 +119,7 @@ func messageEvent(m Message) sseEvent {
 	return sseEvent{event: "message", id: strconv.Itoa(m.Line), data: data}
 }
 
-// markStarted flips the UI out of its "waiting for agent" boot state once the
-// agent process has been launched.
+// markStarted flips the UI out of its boot state once the agent is launched.
 func (s *Server) markStarted() {
 	s.mu.Lock()
 	s.started = true
@@ -136,6 +163,7 @@ func (s *Server) opencodeAskPermission(extID, toolName string, toolInput json.Ra
 	s.status = "needs_approval"
 	s.broadcast(s.stateEvent())
 	s.mu.Unlock()
+	s.notifyPermission(toolName)
 }
 
 func (s *Server) opencodeClearPermission(extID string) {
@@ -178,27 +206,27 @@ func (s *Server) hookSessionStart(c echo.Context) error {
 }
 
 func (s *Server) onTranscriptLine(lineNo int, raw []byte) {
-	parse := parseLine
+	parse := lineParser(parseLine)
 	if s.agent == "codex" {
 		parse = parseCodexLine
 	}
-	msgs, model, ops, title := parse(lineNo, raw)
+	p := parse(lineNo, raw)
 	s.mu.Lock()
 	changed := false
-	if title != "" && title != s.title {
-		s.title, changed = title, true
+	if p.title != "" && p.title != s.title {
+		s.title, changed = p.title, true
 	}
-	if model != "" && model != s.model {
-		s.model, changed = model, true
+	if p.model != "" && p.model != s.model {
+		s.model, changed = p.model, true
 	}
-	if len(ops) > 0 {
-		s.applyTaskOps(ops)
+	if len(p.ops) > 0 {
+		s.applyTaskOps(p.ops)
 		changed = true
 	}
 	if changed {
 		s.broadcast(s.stateEvent())
 	}
-	for _, m := range msgs {
+	for _, m := range p.msgs {
 		if m.Kind == "tool_result" && s.hiddenTasks[m.resultFor] {
 			continue
 		}
@@ -266,6 +294,7 @@ func (s *Server) hookPermission(c echo.Context) error {
 	s.status = "needs_approval"
 	s.broadcast(s.stateEvent())
 	s.mu.Unlock()
+	s.notifyPermission(in.ToolName)
 
 	var behavior string
 	select {
@@ -305,6 +334,7 @@ func (s *Server) hookStop(c echo.Context) error {
 		s.adoptSession(in.SessionID, in.TranscriptPath)
 	}
 	s.setStatus("idle")
+	s.notifyDone()
 	return c.NoContent(http.StatusOK)
 }
 
@@ -420,8 +450,7 @@ func (s *Server) apiInterrupt(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// apiClose ends the agent session; pulse's main loop notices the tmux
-// session is gone and exits shortly after.
+// apiClose kills the agent session; pulse's main loop then exits with it.
 func (s *Server) apiClose(c echo.Context) error {
 	if err := tmuxKill(s.tmuxSession); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -429,11 +458,8 @@ func (s *Server) apiClose(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// uploadDir is where attached files are staged: all three agent CLIs (Claude
-// Code, Codex, OpenCode) recognize a plain absolute file path typed into the
-// prompt and read it themselves (images included, via their own Read/view
-// tool) — no special attach syntax needed, so the UI just needs somewhere to
-// stash the upload and hand back a path.
+// uploadDir stages attached files. Every agent CLI reads a plain absolute path
+// typed into the prompt, so the UI just needs somewhere to drop the upload.
 func (s *Server) uploadDir() string {
 	return filepath.Join(os.TempDir(), "pulse-uploads-"+s.tmuxSession)
 }
@@ -460,9 +486,8 @@ func (s *Server) apiUpload(c echo.Context) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	// Name the file ourselves (never trust the client-supplied name for a
-	// filesystem path) but keep the original extension so the agent's own
-	// file-type sniffing still works.
+	// Name the file ourselves (client names are untrusted), keeping the
+	// extension so the agent's file-type sniffing still works.
 	ext := strings.ToLower(filepath.Ext(fh.Filename))
 	if !safeUploadExt.MatchString(ext) {
 		ext = ""
@@ -483,14 +508,11 @@ func (s *Server) apiUpload(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"path": dst, "name": fh.Filename})
 }
 
-// clearCommands is each agent's real "start a new conversation" slash
-// command; opencode has no /clear, but /new is the equivalent.
+// clearCommands is each agent's "new conversation" slash command.
 var clearCommands = map[string]string{"claude": "/clear", "codex": "/clear", "opencode": "/new"}
 
-// apiClear tells the agent itself to drop its context, then wipes pulse's own
-// replay buffer so the cleared history doesn't come back on reconnect. The
-// agent's SessionStart hook (fired when /clear or /new opens a fresh
-// session/transcript) re-adopts the new transcript via adoptSession.
+// apiClear clears the agent's context and wipes pulse's replay buffer so the
+// old history doesn't reappear on reconnect.
 func (s *Server) apiClear(c echo.Context) error {
 	if cmd := clearCommands[s.agent]; cmd != "" {
 		if err := tmuxSendText(s.tmuxSession, cmd); err != nil {
@@ -652,6 +674,10 @@ func (s *Server) pollMode() {
 	t := time.NewTicker(1500 * time.Millisecond)
 	defer t.Stop()
 	for range t.C {
+		// No one is watching the UI, so skip the tmux subprocess entirely.
+		if !s.watching() {
+			continue
+		}
 		pane := tmuxCapture(s.tmuxSession)
 		m := parseCurMode(pane)
 		s.mu.Lock()
@@ -725,9 +751,17 @@ func startServer(s *Server, ln net.Listener) {
 	e.GET("/api/models", s.apiModels)
 	e.POST("/api/effort", s.apiEffort)
 	e.POST("/api/mode", s.apiMode)
+	e.GET("/api/push/key", s.apiPushKey)
+	e.POST("/api/push/subscribe", s.apiPushSubscribe)
 
 	e.GET("/", func(c echo.Context) error {
 		return c.HTMLBlob(http.StatusOK, indexHTML)
+	})
+	e.GET("/sw.js", func(c echo.Context) error {
+		return c.Blob(http.StatusOK, "application/javascript", swJS)
+	})
+	e.GET("/manifest.webmanifest", func(c echo.Context) error {
+		return c.Blob(http.StatusOK, "application/manifest+json", manifestJSON)
 	})
 
 	go s.pollMode()

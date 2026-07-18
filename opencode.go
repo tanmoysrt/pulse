@@ -155,6 +155,7 @@ func opencodePoll(ctx context.Context, s *Server, base, cwd string, launchedAt t
 						s.setStatus("running")
 					} else {
 						s.setStatus("idle")
+						s.notifyDone()
 					}
 				}
 			}

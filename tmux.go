@@ -65,10 +65,8 @@ func tmuxKill(session string) error {
 	return exec.Command("tmux", "kill-session", "-t", session).Run()
 }
 
-// linksHotkey is the unprefixed key bound (server-wide) to pop up the
-// session's URLs/QR again. Chosen deliberately obscure (rarely bound by
-// shells, editors, or the agent CLIs) since -n bindings apply to every window
-// on the tmux server, not just pulse's own.
+// linksHotkey pops the session's URLs/QR back up. Deliberately obscure: -n
+// bindings apply server-wide to every window, not just pulse's own.
 const linksHotkey = "F12"
 
 func linksPath(session string) string {
@@ -81,16 +79,11 @@ func tmuxWriteLinks(session, content string) error {
 	return os.WriteFile(linksPath(session), []byte(content), 0o600)
 }
 
-// tmuxBindLinksKey registers a single global popup binding whose command
-// resolves the right file at press-time by asking tmux for the current
-// client's session name itself (`tmux display-message -p '#S'`) — the
-// popup's own shell inherits $TMUX from whichever client/session triggered
-// it, so this always names the right file. (display-popup's command string
-// is not itself format-expanded — #{session_name} there stays literal — so
-// this indirection is required, not just stylistic.) Safe to call from every
-// pulse process: each call just re-registers the same generic command, so
-// concurrent pulse sessions on the shared tmux server don't stomp on each
-// other's URL.
+// tmuxBindLinksKey registers a global popup binding that resolves the session's
+// links file at press-time via `display-message -p '#S'`. The indirection is
+// required: display-popup's command string is not format-expanded, so a literal
+// #{session_name} wouldn't work, and it lets concurrent pulse sessions share the
+// one binding without stomping on each other.
 func tmuxBindLinksKey() {
 	dir := os.TempDir()
 	cmd := fmt.Sprintf(`sess=$(tmux display-message -p '#S'); cat '%s/pulse-links-'"$sess"'.txt' 2>/dev/null || echo "(pulse: no link info for this session)"; printf '\nPress any key to close\n'; read -n 1`, dir)

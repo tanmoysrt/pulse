@@ -26,6 +26,17 @@ type Todo struct {
 	Status  string `json:"status"`
 }
 
+// parsed is the result of turning one transcript line into UI updates.
+type parsed struct {
+	msgs  []Message
+	model string
+	title string
+	ops   []taskOp
+}
+
+// lineParser normalizes one raw transcript line; each agent has its own.
+type lineParser func(lineNo int, raw []byte) parsed
+
 type taskOp struct {
 	kind    string
 	todos   []Todo
@@ -112,13 +123,13 @@ func resultText(raw json.RawMessage) string {
 	}
 	var blocks []contentBlock
 	if json.Unmarshal(raw, &blocks) == nil {
-		var t string
+		var t strings.Builder
 		for _, b := range blocks {
 			if b.Type == "text" {
-				t += b.Text
+				t.WriteString(b.Text)
 			}
 		}
-		return t
+		return t.String()
 	}
 	return ""
 }
@@ -157,16 +168,16 @@ func taskFromTool(name string, input json.RawMessage) (taskOp, bool) {
 	return taskOp{}, false
 }
 
-func parseLine(lineNo int, raw []byte) ([]Message, string, []taskOp, string) {
+func parseLine(lineNo int, raw []byte) parsed {
 	var tl transcriptLine
 	if err := json.Unmarshal(raw, &tl); err != nil {
-		return nil, "", nil, ""
+		return parsed{}
 	}
 	if tl.Type == "ai-title" {
-		return nil, "", nil, tl.AiTitle
+		return parsed{title: tl.AiTitle}
 	}
 	if (tl.Type != "user" && tl.Type != "assistant") || tl.IsMeta || tl.IsSidechain {
-		return nil, "", nil, ""
+		return parsed{}
 	}
 	role, model := tl.Message.Role, tl.Message.Model
 
@@ -174,17 +185,17 @@ func parseLine(lineNo int, raw []byte) ([]Message, string, []taskOp, string) {
 	if err := json.Unmarshal(tl.Message.Content, &s); err == nil {
 		s = stripANSI(s)
 		if cmd, ok := parseCommand(s); ok {
-			return []Message{{Line: lineNo * 100, Role: role, Kind: "command", Text: truncate(cmd, maxText)}}, model, nil, ""
+			return parsed{msgs: []Message{{Line: lineNo * 100, Role: role, Kind: "command", Text: truncate(cmd, maxText)}}, model: model}
 		}
 		s = truncate(s, maxText)
 		if s == "" {
-			return nil, model, nil, ""
+			return parsed{model: model}
 		}
-		return []Message{{Line: lineNo * 100, Role: role, Kind: "text", Text: s}}, model, nil, ""
+		return parsed{msgs: []Message{{Line: lineNo * 100, Role: role, Kind: "text", Text: s}}, model: model}
 	}
 	var blocks []contentBlock
 	if err := json.Unmarshal(tl.Message.Content, &blocks); err != nil {
-		return nil, model, nil, ""
+		return parsed{model: model}
 	}
 
 	var out []Message
@@ -220,7 +231,7 @@ func parseLine(lineNo int, raw []byte) ([]Message, string, []taskOp, string) {
 		}
 		out = append(out, m)
 	}
-	return out, model, ops, ""
+	return parsed{msgs: out, model: model, ops: ops}
 }
 
 func tailTranscript(ctx context.Context, path string, emit func(lineNo int, raw []byte)) {

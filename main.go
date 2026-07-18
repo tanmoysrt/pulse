@@ -19,8 +19,7 @@ var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": tru
 
 func hookSettings(port int, token string) ([]byte, error) {
 	base := fmt.Sprintf("http://localhost:%d/hooks", port)
-	// The agent's hook callbacks must pass the same token auth as the UI; carry
-	// it as a query param, which authMiddleware accepts.
+	// Hook callbacks carry the token as a query param, same as the UI.
 	q := ""
 	if token != "" {
 		q = "?t=" + token
@@ -51,10 +50,9 @@ func freePort(host string) (net.Listener, int) {
 	}
 }
 
-// parseArgs pulls pulse's own flags (--local, --no-auth) out of the argv no
-// matter where they appear, so they never reach the agent CLI. The first
-// remaining positional is the agent; everything after it is forwarded verbatim.
-func parseArgs(argv []string) (agent string, agentArgs []string, local, noAuth bool, ok bool) {
+// parseArgs strips pulse's own flags from argv (wherever they appear); the first
+// remaining positional is the agent, the rest is forwarded to it verbatim.
+func parseArgs(argv []string) (agent string, agentArgs []string, local, noAuth, quiet, ok bool) {
 	var rest []string
 	for _, a := range argv {
 		switch a {
@@ -62,14 +60,16 @@ func parseArgs(argv []string) (agent string, agentArgs []string, local, noAuth b
 			local = true
 		case "--no-auth":
 			noAuth = true
+		case "--quiet":
+			quiet = true
 		default:
 			rest = append(rest, a)
 		}
 	}
 	if len(rest) == 0 || !validAgents[rest[0]] {
-		return "", nil, local, noAuth, false
+		return "", nil, local, noAuth, quiet, false
 	}
-	return rest[0], rest[1:], local, noAuth, true
+	return rest[0], rest[1:], local, noAuth, quiet, true
 }
 
 func lanIP() string {
@@ -82,9 +82,9 @@ func lanIP() string {
 }
 
 func main() {
-	agent, agentArgs, local, noAuth, ok := parseArgs(os.Args[1:])
+	agent, agentArgs, local, noAuth, quiet, ok := parseArgs(os.Args[1:])
 	if !ok {
-		fmt.Fprintln(os.Stderr, "usage: pulse [--local] [--no-auth] <claude|codex|opencode> [agent args...]")
+		fmt.Fprintln(os.Stderr, "usage: pulse [--local] [--no-auth] [--quiet] <claude|codex|opencode> [agent args...]")
 		os.Exit(2)
 	}
 
@@ -130,14 +130,13 @@ func main() {
 	}
 	defer cleanup()
 
-	// Start the web server up front so the tunnel and any early visitor get a
-	// live loading screen while we wait at the "Press Enter" prompt below. The
-	// agent (tmux session) isn't launched until Enter, so the UI just shows its
-	// idle/boot state until then.
+	// Serve the UI before the agent launches so early visitors get a loading
+	// screen while we wait at the "Press Enter" prompt.
 	session := fmt.Sprintf("pulse-%d", port)
 	srv := newServer(session, agent)
 	srv.ocBase = ocBase
 	srv.token = token
+	srv.quiet = quiet
 	startServer(srv, ln)
 	defer os.RemoveAll(srv.uploadDir())
 
@@ -151,9 +150,8 @@ func main() {
 		}
 	}
 
-	// Expose the session publicly by default via localtunnel; on any failure
-	// (offline, service down) fall back to the LAN URL. Opt out: PULSE_NO_TUNNEL
-	// or --local.
+	// Public URL via localtunnel by default; falls back to LAN on failure.
+	// Opt out with --local or PULSE_NO_TUNNEL.
 	var tunnelURL string
 	if !local && os.Getenv("PULSE_NO_TUNNEL") == "" {
 		if u, err := startLocalTunnel(port); err != nil {
@@ -177,8 +175,7 @@ func main() {
 	}
 	fmt.Fprintf(&banner, "\n")
 
-	// QR encodes the best reachable address: the public tunnel if we have one,
-	// otherwise the LAN address (localhost is useless from a phone).
+	// QR encodes the best phone-reachable address (localhost is useless there).
 	qrURL := tunnelURL
 	if qrURL == "" {
 		qrURL = lanURL
@@ -192,9 +189,7 @@ func main() {
 
 	fmt.Print(banner.String())
 
-	// Stash the banner so the F12 popup (bound once the agent's tmux session
-	// exists, in tmuxHideChrome) can redisplay it later without leaving the
-	// agent CLI or rerunning pulse.
+	// Stash the banner so the F12 popup can redisplay it later.
 	if err := tmuxWriteLinks(session, banner.String()); err == nil {
 		defer os.Remove(linksPath(session))
 	}

@@ -30,10 +30,8 @@ func withToken(base, token string) string {
 	return base + "/?t=" + token
 }
 
-// authMiddleware rejects any request that does not carry the token, either as a
-// ?t= query param (first visit, e.g. from the QR code) or the cookie we set on
-// that first visit. Relative-path fetch/EventSource calls send the cookie
-// automatically, so the frontend needs no changes.
+// authMiddleware requires the token as a ?t= query param (first visit) or the
+// cookie it then sets; same-origin fetch/EventSource send the cookie for free.
 func authMiddleware(token string) echo.MiddlewareFunc {
 	want := []byte(token)
 	ok := func(got string) bool {

@@ -9,8 +9,7 @@ import (
 )
 
 func codexHookArgs(token string) []string {
-	// The agent's hook callbacks must pass the same token auth as the UI; carry
-	// it as a query param, which authMiddleware accepts.
+	// Hook callbacks carry the token as a query param, same as the UI.
 	q := ""
 	if token != "" {
 		q = "?t=" + token
@@ -28,23 +27,23 @@ func codexHookArgs(token string) []string {
 	}
 }
 
-func parseCodexLine(lineNo int, raw []byte) ([]Message, string, []taskOp, string) {
+func parseCodexLine(lineNo int, raw []byte) parsed {
 	var l struct {
 		Type    string          `json:"type"`
 		Payload json.RawMessage `json:"payload"`
 	}
 	if json.Unmarshal(raw, &l) != nil {
-		return nil, "", nil, ""
+		return parsed{}
 	}
 	if l.Type == "turn_context" {
 		var tc struct {
 			Model string `json:"model"`
 		}
 		json.Unmarshal(l.Payload, &tc)
-		return nil, tc.Model, nil, ""
+		return parsed{model: tc.Model}
 	}
 	if l.Type != "response_item" {
-		return nil, "", nil, ""
+		return parsed{}
 	}
 	var p struct {
 		Type    string `json:"type"`
@@ -61,42 +60,42 @@ func parseCodexLine(lineNo int, raw []byte) ([]Message, string, []taskOp, string
 		} `json:"summary"`
 	}
 	if json.Unmarshal(l.Payload, &p) != nil {
-		return nil, "", nil, ""
+		return parsed{}
 	}
 	line := lineNo * 10
 	switch p.Type {
 	case "message":
 		if p.Role != "user" && p.Role != "assistant" {
-			return nil, "", nil, ""
+			return parsed{}
 		}
-		var text string
+		var text strings.Builder
 		for _, b := range p.Content {
-			text += b.Text
+			text.WriteString(b.Text)
 		}
-		text = truncate(stripANSI(text), maxText)
-		if text == "" || strings.HasPrefix(text, "<environment_context>") {
-			return nil, "", nil, ""
+		s := truncate(stripANSI(text.String()), maxText)
+		if s == "" || strings.HasPrefix(s, "<environment_context>") {
+			return parsed{}
 		}
-		return []Message{{Line: line, Role: p.Role, Kind: "text", Text: text}}, "", nil, ""
+		return parsed{msgs: []Message{{Line: line, Role: p.Role, Kind: "text", Text: s}}}
 	case "reasoning":
-		var text string
+		var text strings.Builder
 		for _, s := range p.Summary {
-			text += s.Text
+			text.WriteString(s.Text)
 		}
-		if text == "" {
-			return nil, "", nil, ""
+		if text.Len() == 0 {
+			return parsed{}
 		}
-		return []Message{{Line: line, Role: "assistant", Kind: "thinking", Text: truncate(text, maxText)}}, "", nil, ""
+		return parsed{msgs: []Message{{Line: line, Role: "assistant", Kind: "thinking", Text: truncate(text.String(), maxText)}}}
 	case "function_call":
-		return []Message{{Line: line, Role: "assistant", Kind: "tool_use", Name: p.Name, Text: truncate(prettyJSON(json.RawMessage(p.Arguments)), maxText)}}, "", nil, ""
+		return parsed{msgs: []Message{{Line: line, Role: "assistant", Kind: "tool_use", Name: p.Name, Text: truncate(prettyJSON(json.RawMessage(p.Arguments)), maxText)}}}
 	case "function_call_output":
 		out := truncate(stripANSI(p.Output), maxText)
 		if out == "" {
-			return nil, "", nil, ""
+			return parsed{}
 		}
-		return []Message{{Line: line, Role: "assistant", Kind: "tool_result", Text: out, resultFor: p.CallID}}, "", nil, ""
+		return parsed{msgs: []Message{{Line: line, Role: "assistant", Kind: "tool_result", Text: out, resultFor: p.CallID}}}
 	}
-	return nil, "", nil, ""
+	return parsed{}
 }
 
 func codexStatusLine(pane string) string {

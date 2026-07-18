@@ -7,14 +7,9 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// qrTerminal renders content as a scannable QR code for the terminal.
-//
-// It packs two module-rows per text line using the upper-half-block glyph
-// (▀), coloring the top half with the foreground and the bottom half with the
-// background. Colors are forced to black-on-white via explicit ANSI codes so
-// the code scans on both light and dark terminals — the library's plain
-// ToSmallString relies on the terminal's default colors, which inverts on dark
-// backgrounds and many phone scanners then miss it.
+// qrTerminal renders a scannable QR for the terminal, packing two module-rows
+// per line with the ▀ half-block. Colors are forced black-on-white so it scans
+// on dark terminals too (default-colored output inverts and phones miss it).
 func qrTerminal(content string) (string, error) {
 	q, err := qrcode.New(content, qrcode.Medium)
 	if err != nil {
