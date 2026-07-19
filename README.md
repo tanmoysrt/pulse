@@ -12,21 +12,29 @@ tools, switch models, get pinged when it needs you.
 (cd frontend && npm install && npm run build)   # build the UI
 go build -o pulse .
 
-pulse            # start the daemon, open the printed URL (scan the QR on mobile)
+pulse            # guided setup, then prints the URL + QR (scan it on mobile)
 pulse claude     # spawn a session from a terminal and attach; args pass through
 ```
 
 Needs `tmux`, the agent CLIs you use, and `sqlite3` for OpenCode history.
 
+On an interactive terminal `pulse` walks you through how it should be reachable
+(LAN or a public tunnel), a login password (random if you leave it blank), and
+whether to pop desktop notifications. Scanning the QR logs you straight in;
+opening the link by hand asks for the password (rate-limited to 5 tries per
+15 min). Pass any of the flags below to skip the matching prompt.
+
 ## Flags
 
 | Flag | Effect |
 |------|--------|
+| `--lan` / `--tunnel` | Choose LAN or a public tunnel without being asked. |
 | `--local` | Loopback only — no LAN address or public tunnel. |
-| `--no-auth` | Drop the token from URLs (trusted networks only). |
-| `--quiet` | Suppress notifications. |
+| `--password <pw>` | Set the login password (else a random one is generated). |
+| `--notify` | Enable desktop notifications on this machine. |
+| `--no-auth` | Drop auth entirely (trusted networks only). |
 
-`PULSE_NO_TUNNEL=1` skips the public tunnel; `PULSE_DEBUG=1` logs requests.
+`PULSE_DEBUG=1` logs requests.
 
 ## How it works
 

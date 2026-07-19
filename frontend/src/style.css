@@ -568,6 +568,80 @@
     .modal-cancel { background: none; color: var(--text); border-color: var(--border); }
     .modal-cancel:hover { background: var(--hover); }
 
+    /* New-chat primary action in the home navbar */
+    .round-btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+    .round-btn.primary:hover { background: var(--ink); color: var(--bg); opacity: 0.9; }
+
+    /* Login page */
+    .login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
+    .login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .login-logo { width: 46px; height: 46px; border-radius: 12px; background: var(--ink); color: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 22px; }
+    .login-title { margin: 16px 0 4px; font-size: 22px; font-weight: 650; color: var(--ink); letter-spacing: -0.02em; }
+    .login-sub { margin: 0 0 22px; font-size: 14.5px; color: var(--muted); }
+    .login-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+    .login-form input {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface-2); color: var(--ink); font: inherit; font-size: 16px; outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .login-form input:focus { border-color: var(--subtle); background: var(--bg); }
+    .login-form button {
+      width: 100%; padding: 12px; border: 0; border-radius: var(--radius); background: var(--ink); color: var(--bg);
+      font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    }
+    .login-form button:disabled { opacity: 0.45; cursor: default; }
+    .login-msg { margin: 14px 0 0; font-size: 13.5px; color: var(--muted); }
+    .login-msg.err { color: #dc2626; }
+    @media (prefers-color-scheme: dark) { .login-msg.err { color: #f87171; } }
+    .login-hint { margin: 26px 0 0; font-size: 12.5px; color: var(--subtle); }
+
+    /* Settings slide-over sheet */
+    .sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: var(--overlay); display: flex; justify-content: flex-end; }
+    .settings-sheet {
+      width: 100%; max-width: 420px; height: 100%; background: var(--bg); display: flex; flex-direction: column;
+      box-shadow: var(--shadow-lg); animation: slideInRight 0.2s ease-out;
+    }
+    @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .sheet-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 18px 20px 14px; padding-top: calc(18px + env(safe-area-inset-top)); border-bottom: 1px solid var(--border);
+    }
+    .sheet-head h3 { margin: 0; font-size: 17px; color: var(--ink); }
+    .sheet-body { flex: 1; overflow-y: auto; padding: 8px 20px calc(24px + env(safe-area-inset-bottom)); }
+    .set-section { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--subtle); margin: 20px 0 10px; }
+    .set-row { display: flex; align-items: center; gap: 14px; padding: 6px 0; }
+    .set-row-main { flex: 1; min-width: 0; }
+    .set-row-title { font-size: 15px; font-weight: 550; color: var(--ink); }
+    .set-row-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .toggle {
+      flex: none; width: 46px; height: 27px; border: 0; border-radius: 999px; background: var(--hover); cursor: pointer;
+      padding: 0; position: relative; transition: background 0.18s;
+    }
+    .toggle.on { background: var(--ink); }
+    .toggle:disabled { opacity: 0.4; cursor: default; }
+    .toggle-knob { position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 999px; background: #fff; transition: transform 0.18s; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    .toggle.on .toggle-knob { transform: translateX(19px); }
+    .set-empty { font-size: 13.5px; color: var(--subtle); padding: 8px 0; }
+    .stat-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 14px; margin-bottom: 10px; }
+    .stat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .stat-icon { flex: none; display: flex; }
+    .stat-label { font-size: 13.5px; font-weight: 550; color: var(--text); }
+    .stat-value { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .spark { width: 100%; height: 34px; display: block; }
+    .spark-fill { opacity: 0.13; }
+    .spark-line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* First-run notification prompt */
+    .notify-prompt { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 28px; }
+    .np-inner { max-width: 340px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .np-icon { width: 64px; height: 64px; border-radius: 999px; background: var(--surface); color: var(--ink); display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+    .np-title { margin: 0 0 10px; font-size: 21px; font-weight: 650; color: var(--ink); letter-spacing: -0.02em; }
+    .np-text { margin: 0 0 26px; font-size: 15px; line-height: 1.5; color: var(--muted); }
+    .np-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+    .np-enable { padding: 13px; border: 0; border-radius: var(--radius); background: var(--ink); color: var(--bg); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .np-skip { padding: 11px; border: 0; border-radius: var(--radius); background: none; color: var(--muted); font: inherit; font-size: 14.5px; cursor: pointer; }
+    .np-skip:hover { color: var(--ink); }
+
     /* Read-only history view: transcript only, no controls */
     .app.readonly footer,
     .app.readonly .header-right,

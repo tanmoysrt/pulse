@@ -5,23 +5,19 @@
     <div class="home-head">
       <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
       <div class="home-actions">
-        <button v-if="hasAny" class="round-btn" :class="{ on: searchOpen }" title="Search chats" aria-label="Search chats" @click="toggleSearch">
-          <Icon name="search" :size="16" />
+        <button class="round-btn primary" title="New chat" aria-label="New chat" @click="showModal = true">
+          <Icon name="plus" :size="17" />
         </button>
-        <button v-if="pushSup" class="round-btn" :class="{ on: pushOn }" :title="pushOn ? 'Notifications on — tap to turn off' : 'Enable notifications'" @click="toggleNotifs">
-          <Icon :name="pushOn ? 'bell' : 'bell-off'" :size="16" />
-        </button>
-        <button class="new-btn" @click="showModal = true">
-          <Icon name="plus" :size="15" />
-          New chat
+        <button class="round-btn" title="Settings" aria-label="Settings" @click="showSettings = true">
+          <Icon name="settings" :size="16" />
         </button>
       </div>
     </div>
 
-    <div v-if="searchOpen" class="home-search">
+    <div v-if="hasAny" class="home-search">
       <Icon name="search" :size="16" />
-      <input ref="searchInput" v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" @keydown.esc="closeSearch" />
-      <button class="search-clear" aria-label="Close search" @click="closeSearch">
+      <input v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" @keydown.esc="query = ''" />
+      <button v-if="query" class="search-clear" aria-label="Clear search" @click="query = ''">
         <Icon name="x" :size="14" />
       </button>
     </div>
@@ -44,20 +40,24 @@
     </VirtualList>
     <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
     <div v-else-if="query" class="home-list home-empty"><h2>No matches</h2><p>Nothing matches “{{ query }}”.</p></div>
-    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Start one with “New chat”.</p></div>
+    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Start one with the ＋ button.</p></div>
 
     <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
+    <SettingsSheet v-if="showSettings" :push-supported="pushSup" :push-on="pushOn" @close="showSettings = false" @toggle-push="toggleNotifs" />
+    <NotifyPrompt v-if="showNotifyPrompt" @enable="promptEnable" @dismiss="promptDismiss" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
 import { baseName, timeAgo, dateBucket } from '../lib/format'
 import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
 import NewChatModal from '../components/NewChatModal.vue'
+import SettingsSheet from '../components/SettingsSheet.vue'
+import NotifyPrompt from '../components/NotifyPrompt.vue'
 import AgentLogo from '../components/AgentLogo.vue'
 import Icon from '../components/Icon.vue'
 import VirtualList from '../components/VirtualList.vue'
@@ -68,25 +68,20 @@ const history = ref([])
 const loaded = ref(false)
 const error = ref(false)
 const showModal = ref(false)
+const showSettings = ref(false)
 const installed = ref([])
 const query = ref('')
-const searchOpen = ref(false)
-const searchInput = ref(null)
 
 const hasAny = computed(() => live.value.length > 0 || history.value.length > 0)
 
-function toggleSearch() {
-  searchOpen.value = !searchOpen.value
-  if (searchOpen.value) nextTick(() => searchInput.value && searchInput.value.focus())
-  else query.value = ''
-}
-function closeSearch() { searchOpen.value = false; query.value = '' }
-
-// Notifications are a daemon-level setting: one browser subscription covers
-// every session, so it lives here rather than inside a chat.
+// Notifications are a daemon-level setting (one browser subscription covers every
+// session), so state lives here and is shared with the settings sheet + first-run
+// prompt rather than inside a chat.
 const pushSup = pushSupported()
 const pushOn = ref(false)
+const showNotifyPrompt = ref(false)
 let pushReg = null
+
 async function toggleNotifs() {
   try {
     if (pushOn.value) { await disablePush(pushReg); pushOn.value = false; return }
@@ -97,6 +92,10 @@ async function toggleNotifs() {
     window.alert('Notifications need an HTTPS connection (open the public link).')
   }
 }
+
+function dismissPrompt() { localStorage.setItem('pulse.notifPrompt', '1'); showNotifyPrompt.value = false }
+async function promptEnable() { dismissPrompt(); await toggleNotifs() }
+function promptDismiss() { dismissPrompt() }
 
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
 
@@ -130,9 +129,9 @@ const rows = computed(() => {
 })
 
 function open(s, isLive) {
-  const query = { a: s.tool, t: cardTitle(s) }
-  if (isLive) router.push({ path: '/s/' + s.id, query })
-  else router.push({ path: '/h/' + encodeURIComponent(s.id), query })
+  const q = { a: s.tool, t: cardTitle(s) }
+  if (isLive) router.push({ path: '/s/' + s.id, query: q })
+  else router.push({ path: '/h/' + encodeURIComponent(s.id), query: q })
 }
 function onStarted(d) {
   showModal.value = false
@@ -150,6 +149,8 @@ onMounted(async () => {
   if (pushSup) {
     const reg = await existingSubscription().catch(() => null)
     if (reg) { pushReg = reg; pushOn.value = true }
+    // First run: offer to turn notifications on, but only ask once ever.
+    else if (!error.value && !localStorage.getItem('pulse.notifPrompt')) showNotifyPrompt.value = true
   }
 })
 </script>

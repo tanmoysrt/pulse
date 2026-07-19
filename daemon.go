@@ -21,23 +21,29 @@ import (
 
 // Daemon owns every live Session and serves the UI plus cross-tool history.
 type Daemon struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-	seq      int
-	token    string
-	quiet    bool
-	vapid    *vapidKey
-	pushSubs []pushSub
-	port     int
+	mu          sync.Mutex
+	sessions    map[string]*Session
+	seq         int
+	token       string
+	password    string
+	localNotify bool
+	logins      *loginLimiter
+	stats       *statsRing
+	vapid       *vapidKey
+	pushSubs    []pushSub
+	port        int
 }
 
-func newDaemon(token string, quiet bool, port int) *Daemon {
+func newDaemon(token, password string, localNotify bool, port int) *Daemon {
 	return &Daemon{
-		sessions: map[string]*Session{},
-		token:    token,
-		quiet:    quiet,
-		port:     port,
-		vapid:    loadOrCreateVapid(),
+		sessions:    map[string]*Session{},
+		token:       token,
+		password:    password,
+		localNotify: localNotify,
+		logins:      newLoginLimiter(),
+		stats:       newStatsRing(),
+		port:        port,
+		vapid:       loadOrCreateVapid(),
 	}
 }
 
@@ -352,10 +358,12 @@ func startServer(d *Daemon, ln net.Listener) {
 		})
 	}
 
+	e.POST("/api/login", d.apiLogin)
 	e.GET("/api/sessions", d.apiList)
 	e.POST("/api/sessions", d.apiSpawn)
 	e.GET("/api/history", d.apiHistory)
 	e.GET("/api/dirs", d.apiDirs)
+	e.GET("/api/stats", d.apiStats)
 	e.GET("/api/push/key", d.apiPushKey)
 	e.POST("/api/push/subscribe", d.apiPushSubscribe)
 

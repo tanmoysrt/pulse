@@ -37,16 +37,16 @@ func main() {
 			return
 		}
 	}
-	agent, agentArgs, local, noAuth, quiet := parseArgs(args)
+	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--local] [--no-auth] [--quiet] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--notify] [--no-auth] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
 		return
 	}
-	runDaemon(local, noAuth, quiet)
+	runDaemon(o)
 }
 
 // runList prints the daemon's live sessions.
@@ -137,23 +137,30 @@ func runClient(agent string, agentArgs []string) {
 	}
 }
 
-func runDaemon(local, noAuth, quiet bool) {
+func runDaemon(o opts) {
+	o = runWizard(o) // interactive prompts for anything not fixed by a flag
+
 	bindHost := ""
-	if local {
+	if o.local {
 		bindHost = "127.0.0.1"
 	}
-	token := ""
-	if !noAuth {
+	token, password := "", ""
+	if !o.noAuth {
 		token = randomToken()
+		password = o.password
+		if password == "" {
+			password = randomPassword()
+		}
 	}
 
 	ln, port := listen(bindHost, defaultPort)
-	d := newDaemon(token, quiet, port)
+	d := newDaemon(token, password, o.localNotify, port)
 	d.reconcile()
+	go d.stats.collect()
 	startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
 
-	fmt.Print(daemonBanner(d, local, port))
+	fmt.Print(daemonBanner(d, o, port))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	<-ctx.Done()
@@ -205,51 +212,35 @@ func promptStopAll(n int) bool {
 	}
 }
 
-// daemonBanner is the startup blurb: UI URLs plus a QR of the best one.
-func daemonBanner(d *Daemon, local bool, port int) string {
-	localURL := withToken(fmt.Sprintf("http://localhost:%d", port), d.token)
-
-	lanURL := ""
-	if !local {
-		if ip := lanIP(); ip != "" {
-			lanURL = withToken(fmt.Sprintf("http://%s:%d", ip, port), d.token)
-		}
-	}
-
-	tunnelURL := ""
-	if !local && os.Getenv("PULSE_NO_TUNNEL") == "" {
+// daemonBanner is the startup screen: the primary URL, a QR of it, and the login
+// password — deliberately minimal (only what you need to open pulse on a phone).
+func daemonBanner(d *Daemon, o opts, port int) string {
+	// The primary URL is what the QR encodes and what you scan/open.
+	primary, scope := "", ""
+	if o.tunnel && !o.local {
 		if u, err := startLocalTunnel(port); err != nil {
-			fmt.Fprintln(os.Stderr, "pulse: tunnel unavailable, using local network:", err)
+			fmt.Fprintln(os.Stderr, "pulse: tunnel unavailable, falling back to LAN:", err)
 		} else {
-			tunnelURL = withToken(u, d.token)
+			primary, scope = withToken(u, d.token), "public"
 		}
 	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "pulse: daemon ready — open the UI to start a session\n")
-	if tunnelURL != "" {
-		fmt.Fprintf(&b, "  %s   (public)\n", tunnelURL)
-	}
-	if lanURL != "" {
-		fmt.Fprintf(&b, "  %s   (LAN)\n", lanURL)
-	}
-	fmt.Fprintf(&b, "  %s\n", localURL)
-	if d.token != "" {
-		fmt.Fprintf(&b, "  (token auth on; share the URL as-is. bypass with --no-auth)\n")
-	}
-	fmt.Fprintf(&b, "\n")
-
-	qrURL := tunnelURL
-	if qrURL == "" {
-		qrURL = lanURL
-	}
-	if qrURL != "" {
-		if qr, err := qrTerminal(qrURL); err == nil {
-			fmt.Fprintf(&b, "Scan to open  %s\n\n%s\n", qrURL, qr)
+	if primary == "" && !o.local {
+		if ip := lanIP(); ip != "" {
+			primary, scope = withToken(fmt.Sprintf("http://%s:%d", ip, port), d.token), "LAN"
 		}
 	}
-	fmt.Fprintf(&b, "From any terminal: `pulse claude` spawns a session and attaches; `pulse ls` lists them, `pulse attach <id>` reattaches.\nCtrl-C asks whether to stop running sessions (they otherwise keep running for the next start).\n")
-	return b.String()
+	if primary == "" {
+		primary, scope = withToken(fmt.Sprintf("http://localhost:%d", port), d.token), "local"
+	}
+	return renderSummary(primary, scope, d.password, qrOf(primary))
+}
+
+func qrOf(url string) string {
+	qr, err := qrTerminal(url)
+	if err != nil {
+		return ""
+	}
+	return qr
 }
 
 // hookSettings builds Claude's per-session settings: HTTP hooks tagged with id.
@@ -293,18 +284,36 @@ func freePort(host string) (net.Listener, int) {
 	}
 }
 
+// opts holds daemon startup choices. The *Set fields record whether a flag fixed
+// the value, so the wizard only prompts for what the user left open.
+type opts struct {
+	local, noAuth, tunnel, localNotify bool
+	password                           string
+	tunnelSet, notifySet, passwordSet  bool
+}
+
 // parseArgs strips pulse's own flags; the first remaining positional (if any)
 // is the agent to spawn as a client, the rest is forwarded verbatim.
-func parseArgs(argv []string) (agent string, agentArgs []string, local, noAuth, quiet bool) {
+func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 	var rest []string
-	for _, a := range argv {
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
 		switch a {
 		case "--local":
-			local = true
+			o.local = true
 		case "--no-auth":
-			noAuth = true
-		case "--quiet":
-			quiet = true
+			o.noAuth = true
+		case "--tunnel":
+			o.tunnel, o.tunnelSet = true, true
+		case "--lan":
+			o.tunnel, o.tunnelSet = false, true
+		case "--notify":
+			o.localNotify, o.notifySet = true, true
+		case "--password":
+			if i+1 < len(argv) {
+				i++
+				o.password, o.passwordSet = argv[i], true
+			}
 		default:
 			rest = append(rest, a)
 		}

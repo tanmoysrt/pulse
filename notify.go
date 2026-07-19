@@ -39,26 +39,26 @@ func (s *Session) agentName() string {
 	return name
 }
 
-// notifyDone announces the agent finished its turn.
+// notifyDone announces the agent finished its turn. Native desktop notifications
+// fire only when local notifications are enabled; web push is always attempted
+// (it no-ops without subscribers) and is controlled per-browser instead.
 func (s *Session) notifyDone() {
-	if s.d.quiet {
-		return
-	}
 	body := fmt.Sprintf(cuteDoneMessages[rand.Intn(len(cuteDoneMessages))], s.agentName())
-	go notify("✨ pulse", body, soundDone)
+	if s.d.localNotify {
+		go notify("✨ pulse", body, soundDone)
+	}
 	go s.d.pushAll("✨ pulse", body)
 }
 
 // notifyPermission announces the agent is waiting for tool approval.
 func (s *Session) notifyPermission(tool string) {
-	if s.d.quiet {
-		return
-	}
 	body := fmt.Sprintf("%s wants to run %s. approve? 🔐", s.agentName(), tool)
 	if tool == "" {
 		body = fmt.Sprintf("%s needs your permission 🔐", s.agentName())
 	}
-	go notify("🔐 pulse: needs you", body, soundAlert)
+	if s.d.localNotify {
+		go notify("🔐 pulse: needs you", body, soundAlert)
+	}
 	go s.d.pushAll("🔐 pulse: needs you", body)
 }
 
