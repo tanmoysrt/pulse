@@ -59,3 +59,7 @@ streams it to the browser over SSE; it never touches your global agent config.
 History is read from each tool's own store (`~/.claude`, `~/.codex`, OpenCode's
 SQLite). The UI is a Vue app built into a single self-contained
 `frontend/dist/index.html` that the binary embeds.
+
+## License
+
+[Apache 2.0](LICENSE)
