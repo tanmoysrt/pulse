@@ -42,12 +42,13 @@ pulse attach <id> # reattach to a running session
 ```
 
 The first run walks you through how Pulse should be reachable (LAN or a public
-tunnel), its port, a login password (random if you leave it blank), and whether
-to show desktop notifications. On later runs, press Enter to reuse those saved
-choices, or select **Redo setup** to replace them. Pulse stores only a bcrypt
-password hash, never the password itself. Scanning the QR code logs you straight
-in. Opening the link by hand asks for the password, rate limited to 5 tries per
-15 minutes. Pass any flag below to skip its prompt.
+tunnel), a login password (random if you leave it blank), and whether to show
+desktop notifications. On later runs, press Enter to reuse those saved choices,
+or select **Redo setup** to replace them. Pulse stores only a bcrypt password
+hash, never the password itself. Set a port explicitly with `--listen-port`.
+Scanning the QR code logs you straight in. Opening the link by hand asks for the
+password, rate limited to 5 tries per 15 minutes. Pass any flag below to skip its
+prompt.
 
 ## Flags
 

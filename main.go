@@ -177,7 +177,7 @@ func runDaemon(o opts) {
 	ln, port := listen(bindHost, pref)
 	d := newDaemon(token, passwordHash, o.localNotify, port)
 	if !o.noAuth {
-		writeSetup(setupRecord{Tunnel: o.tunnel, Port: port, Notify: o.localNotify, PasswordHash: passwordHash})
+		writeSetup(setupRecord{Tunnel: o.tunnel, Notify: o.localNotify, PasswordHash: passwordHash})
 	}
 	d.reconcile()
 	go d.stats.collect()

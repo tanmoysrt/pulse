@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -94,9 +93,6 @@ func setupSteps(o opts) []string {
 	if !o.local && !o.tunnelSet {
 		steps = append(steps, "expose")
 	}
-	if !o.portSet {
-		steps = append(steps, "port")
-	}
 	if !o.noAuth && !o.passwordSet {
 		steps = append(steps, "password")
 	}
@@ -122,9 +118,6 @@ func applySetup(o opts, saved *setupRecord) opts {
 	if !o.local && !o.tunnelSet {
 		o.tunnel = saved.Tunnel
 	}
-	if !o.portSet {
-		o.port = saved.Port
-	}
 	if !o.notifySet {
 		o.localNotify = saved.Notify
 	}
@@ -142,7 +135,6 @@ type wizModel struct {
 	input  textinput.Model
 	quit   bool
 	saved  *setupRecord
-	error  string
 }
 
 func (m wizModel) Init() tea.Cmd { return textinput.Blink }
@@ -153,13 +145,6 @@ func (m *wizModel) focusStep() {
 	case "password":
 		m.input.Placeholder = "leave blank to auto-generate"
 		m.input.EchoMode = textinput.EchoPassword
-		m.input.Focus()
-	case "port":
-		m.input.Placeholder = strconv.Itoa(defaultPort)
-		m.input.EchoMode = textinput.EchoNormal
-		if m.o.port > 0 {
-			m.input.SetValue(strconv.Itoa(m.o.port))
-		}
 		m.input.Focus()
 	default:
 		m.input.Blur()
@@ -181,17 +166,17 @@ func (m wizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quit = true
 		return m, tea.Quit
 	case "up", "k":
-		if m.step() != "password" && m.step() != "port" && m.cursor > 0 {
+		if m.step() != "password" && m.cursor > 0 {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.step() != "password" && m.step() != "port" && m.cursor < 1 {
+		if m.step() != "password" && m.cursor < 1 {
 			m.cursor++
 		}
 	case "enter":
 		return m.commit()
 	}
-	if m.step() == "password" || m.step() == "port" {
+	if m.step() == "password" {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -201,7 +186,6 @@ func (m wizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // commit records the current step's answer and advances (or quits on the last).
 func (m wizModel) commit() (tea.Model, tea.Cmd) {
-	m.error = ""
 	switch m.step() {
 	case "saved":
 		if m.cursor == 0 {
@@ -214,17 +198,6 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "expose":
 		m.o.tunnel = m.cursor == 1
-	case "port":
-		port := defaultPort
-		if value := strings.TrimSpace(m.input.Value()); value != "" {
-			var err error
-			port, err = strconv.Atoi(value)
-			if err != nil || port < 1 || port > 65535 {
-				m.error = "Enter a port between 1 and 65535."
-				return m, nil
-			}
-		}
-		m.o.port = port
 	case "password":
 		m.o.password = strings.TrimSpace(m.input.Value())
 	case "notify":
@@ -249,15 +222,11 @@ func (m wizModel) View() string {
 			mode = "Public tunnel"
 		}
 		b.WriteString(titleStyle.Render("Use saved setup?") + "\n\n")
-		b.WriteString(dimStyle.Render(fmt.Sprintf("%s · port %d · desktop notifications %s", mode, m.saved.Port, onOff(m.saved.Notify))) + "\n\n")
+		b.WriteString(dimStyle.Render(fmt.Sprintf("%s · desktop notifications %s", mode, onOff(m.saved.Notify))) + "\n\n")
 		b.WriteString(m.renderChoices([]choice{{"Start with saved setup", "use these settings"}, {"Redo setup", "replace the saved settings"}}))
 	case "expose":
 		b.WriteString(titleStyle.Render("How should pulse be reachable?") + "\n\n")
 		b.WriteString(m.renderChoices(exposeChoices))
-	case "port":
-		b.WriteString(titleStyle.Render("Choose a port") + "\n")
-		b.WriteString(dimStyle.Render("Pulse uses this port for its local web server.") + "\n\n")
-		b.WriteString("  " + m.input.View() + "\n")
 	case "password":
 		b.WriteString(titleStyle.Render("Set a login password") + "\n")
 		b.WriteString(dimStyle.Render("Used on the login page; scanning the QR skips it.") + "\n\n")
@@ -266,10 +235,6 @@ func (m wizModel) View() string {
 		b.WriteString(titleStyle.Render("Desktop notifications on this machine?") + "\n\n")
 		b.WriteString(m.renderChoices(notifyChoices))
 	}
-	if m.error != "" {
-		b.WriteString("\n" + m.error + "\n")
-	}
-
 	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
 }
