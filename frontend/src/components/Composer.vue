@@ -17,12 +17,10 @@
 
       <div class="composer-bottom">
         <div class="toolbar">
-          <Selector v-if="modes.length" :label="modeLabel || 'Mode'" :options="modes"
-            :current="(o) => mode === o.id" @select="(o) => $emit('setMode', o.id)" />
-          <Selector v-if="models.length" :label="modelLabel || 'Model'" :options="models" :searchable="agent === 'opencode'"
-            :current="(o) => modelLabel === o.label" @select="(o) => $emit('setModel', o)" />
-          <Selector v-if="efforts.length" cap :label="effortLabel || 'Effort'" :options="efforts"
-            :current="(o) => effortLabel === o.id" @select="(o) => $emit('setEffort', o)" />
+          <button v-if="hasOptions" class="opts-btn" title="Session options" @click="optsOpen = true">
+            <Icon name="sliders" :size="14" />
+            <span class="opts-label">{{ modeLabel || 'Options' }}</span>
+          </button>
         </div>
 
         <button class="attachbtn" title="Attach file" aria-label="Attach file" @click="pickFile">
@@ -38,12 +36,18 @@
       </div>
     </div>
     <input ref="file" type="file" multiple hidden @change="onFilesChosen" />
+
+    <SessionSettingsModal v-if="optsOpen"
+      :modes="modes" :models="models" :efforts="efforts" :searchable="agent === 'opencode'"
+      :mode="mode" :model-label="modelLabel" :effort-label="effortLabel"
+      @close="optsOpen = false"
+      @set-mode="(v) => $emit('setMode', v)" @set-model="(v) => $emit('setModel', v)" @set-effort="(v) => $emit('setEffort', v)" />
   </footer>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import Selector from './Selector.vue'
+import SessionSettingsModal from './SessionSettingsModal.vue'
 import Icon from './Icon.vue'
 import { agentLabel } from '../constants'
 import { isImageType, fileExtLabel } from '../lib/format'
@@ -59,6 +63,7 @@ const emit = defineEmits(['send', 'stop', 'setMode', 'setModel', 'setEffort'])
 const text = ref('')
 const attachments = ref([])
 const sending = ref(false)
+const optsOpen = ref(false)
 let seq = 0
 
 const input = ref(null)
@@ -66,6 +71,7 @@ const file = ref(null)
 const footer = ref(null)
 
 const modeLabel = computed(() => (props.modes.find((m) => m.id === props.mode) || {}).label || '')
+const hasOptions = computed(() => props.modes.length > 0 || props.models.length > 0 || props.efforts.length > 0)
 const ready = computed(() => attachments.value.filter((a) => a.status === 'done'))
 const uploading = computed(() => attachments.value.some((a) => a.status === 'uploading'))
 const canSend = computed(() => !props.disabled && !sending.value && !uploading.value && (!!text.value.trim() || ready.value.length > 0))

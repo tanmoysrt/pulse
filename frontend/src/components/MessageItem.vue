@@ -1,6 +1,9 @@
 <template>
   <div v-if="m.kind === 'text'" class="row" :class="m.role">
-    <div class="bubble" :class="m.role" v-html="renderText(m.text)"></div>
+    <div class="bubble-wrap" :class="{ clipped: clip && !open }">
+      <div ref="bubbleEl" class="bubble" :class="m.role" v-html="renderText(m.text)"></div>
+      <button v-if="clip" class="more-btn" @click="toggle">{{ open ? 'Show less' : 'Show more' }}</button>
+    </div>
   </div>
 
   <div v-else-if="m.kind === 'command'" class="cmd-row">
@@ -43,7 +46,7 @@
 <script setup>
 // Expanded/collapsed state lives in a store the parent provides (keyed by
 // message) so it survives the virtualizer recycling this row off-screen.
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, onMounted, nextTick } from 'vue'
 import { renderText, firstLine, toolSummary, commandLabel } from '../lib/format'
 import Chevron from './Chevron.vue'
 
@@ -65,4 +68,14 @@ const toolCount = computed(() => {
   const n = props.m.items.filter((i) => i.kind === 'tool_use').length
   return n || props.m.items.length
 })
+
+// Clamp long assistant replies to ~6 lines behind a fade; measured after mount
+// (re-runs when the virtualizer remounts the row) so only overflowing text gets
+// the "Show more" affordance.
+const CLIP_PX = 150
+const bubbleEl = ref(null)
+const clip = ref(false)
+onMounted(() => nextTick(() => {
+  if (props.m.role === 'assistant' && bubbleEl.value) clip.value = bubbleEl.value.scrollHeight > CLIP_PX + 24
+}))
 </script>

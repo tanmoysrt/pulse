@@ -221,17 +221,20 @@ func opencodeModelName(pane, base string) string {
 	if cfg == nil {
 		return rest
 	}
-	best := ""
+	// The TUI status renders "<model> <provider>"; match on that but return the
+	// same "<model> (<provider>)" label opencodeModels emits, so the picker can
+	// mark the active model.
+	best, label := "", ""
 	for _, p := range cfg.Providers {
 		for _, m := range p.Models {
 			full := m.Name + " " + p.Name
 			if strings.HasPrefix(rest, full) && len(full) > len(best) {
-				best = full
+				best, label = full, m.Name+" ("+p.Name+")"
 			}
 		}
 	}
-	if best != "" {
-		return best
+	if label != "" {
+		return label
 	}
 	return rest
 }

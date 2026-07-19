@@ -5,7 +5,10 @@
     <div class="home-head">
       <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
       <div class="home-actions">
-        <button v-if="pushSup" class="notif-btn" :class="{ on: pushOn }" :title="pushOn ? 'Notifications on — tap to turn off' : 'Enable notifications'" @click="toggleNotifs">
+        <button v-if="hasAny" class="round-btn" :class="{ on: searchOpen }" title="Search chats" aria-label="Search chats" @click="toggleSearch">
+          <Icon name="search" :size="16" />
+        </button>
+        <button v-if="pushSup" class="round-btn" :class="{ on: pushOn }" :title="pushOn ? 'Notifications on — tap to turn off' : 'Enable notifications'" @click="toggleNotifs">
           <Icon :name="pushOn ? 'bell' : 'bell-off'" :size="16" />
         </button>
         <button class="new-btn" @click="showModal = true">
@@ -15,10 +18,10 @@
       </div>
     </div>
 
-    <div v-if="hasAny" class="home-search">
-      <Icon name="search" :size="15" />
-      <input v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" />
-      <button v-if="query" class="search-clear" aria-label="Clear search" @click="query = ''">
+    <div v-if="searchOpen" class="home-search">
+      <Icon name="search" :size="16" />
+      <input ref="searchInput" v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" @keydown.esc="closeSearch" />
+      <button class="search-clear" aria-label="Close search" @click="closeSearch">
         <Icon name="x" :size="14" />
       </button>
     </div>
@@ -48,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
@@ -67,8 +70,17 @@ const error = ref(false)
 const showModal = ref(false)
 const installed = ref([])
 const query = ref('')
+const searchOpen = ref(false)
+const searchInput = ref(null)
 
 const hasAny = computed(() => live.value.length > 0 || history.value.length > 0)
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) nextTick(() => searchInput.value && searchInput.value.focus())
+  else query.value = ''
+}
+function closeSearch() { searchOpen.value = false; query.value = '' }
 
 // Notifications are a daemon-level setting: one browser subscription covers
 // every session, so it lives here rather than inside a chat.
