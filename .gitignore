@@ -10,3 +10,6 @@ frontend/dist/
 # Go
 *.test
 *.out
+
+# Agent
+.claude
