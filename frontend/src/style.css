@@ -123,8 +123,9 @@
     .menurow-val { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; max-width: 84px; white-space: nowrap; }
     .menurow.cap .menurow-val { text-transform: capitalize; }
     .menu-divider { height: 1px; background: var(--border); margin: 6px 4px; }
-    .menuitem.danger { color: var(--ink); }
+    .menuitem.danger { color: #dc2626; }
     .menuitem.danger:hover { background: var(--surface); }
+    @media (prefers-color-scheme: dark) { .menuitem.danger { color: #f87171; } }
     .kebab-wrap .kebab-menu .menu { bottom: auto; left: auto; top: calc(100% + 6px); right: 0; }
 
     .tasks-sheet {
@@ -213,12 +214,6 @@
     .row.user .bubble-wrap.clipped::after {
       background: linear-gradient(transparent, var(--ink)); border-radius: 0 0 6px var(--radius-lg);
     }
-    .expand-hint {
-      position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); z-index: 1;
-      display: flex; pointer-events: none;
-    }
-    .row.assistant .expand-hint { color: var(--muted); }
-    .row.user .expand-hint { color: var(--bg); }
 
     /* Thinking */
     .thinking { margin: 0 0 14px; }

@@ -177,21 +177,19 @@ func (m wizModel) renderChoices(choices []choice) string {
 	return b.String()
 }
 
-// renderSummary is the post-setup screen: the URL to open, its QR, and the login
-// password. Intentionally spare — only what you need to get pulse on a phone.
-func renderSummary(url, scope, password, qr string) string {
+// renderSummary is the post-setup screen: the QR and the URL to open. Kept
+// spare on purpose; the password is never printed (scan the QR, or you set it).
+func renderSummary(url, scope, qr string) string {
 	label := map[string]string{"public": "Public link", "LAN": "On your network", "local": "On this machine"}[scope]
 	var b strings.Builder
 	b.WriteString("\n" + accentStyle.Render("◆ Pulse is running") + "\n\n")
 	if qr != "" {
-		b.WriteString(indent(qr, 2) + "\n")
+		b.WriteString(indent(qr, 2) + "\n\n")
 	}
 	b.WriteString("  " + dimStyle.Render(label) + "\n")
 	b.WriteString("  " + accentStyle.Render(url) + "\n")
-	if password != "" {
-		b.WriteString("\n  " + dimStyle.Render("Password") + "  " + titleStyle.Render(password) + "\n")
-	}
-	b.WriteString("\n  " + dimStyle.Render("pulse claude  starts a session  ·  Ctrl-C  quits") + "\n")
+	b.WriteString("\n  " + dimStyle.Render("pulse claude · codex · opencode  starts a session") + "\n")
+	b.WriteString("  " + dimStyle.Render("Ctrl-C  quits") + "\n")
 	return b.String()
 }
 

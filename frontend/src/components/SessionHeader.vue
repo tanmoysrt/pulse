@@ -25,7 +25,7 @@
         </button>
         <div v-if="open" class="kebab-menu">
           <button class="menuitem" @click="run('compact')">Compact chat</button>
-          <button class="menuitem" @click="run('clear')">Clear chat</button>
+          <button class="menuitem danger" @click="run('clear')">Clear chat</button>
           <button class="menuitem danger" @click="run('close')">Close session</button>
         </div>
       </div>

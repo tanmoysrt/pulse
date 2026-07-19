@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +20,7 @@ import (
 
 var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
 
-const defaultPort = 7420
+const defaultPort = 4444
 
 func main() {
 	args := os.Args[1:]
@@ -40,7 +41,7 @@ func main() {
 	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--notify] [--no-auth] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [--no-auth] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
@@ -153,7 +154,11 @@ func runDaemon(o opts) {
 		}
 	}
 
-	ln, port := listen(bindHost, defaultPort)
+	pref := defaultPort
+	if o.port > 0 {
+		pref = o.port
+	}
+	ln, port := listen(bindHost, pref)
 	d := newDaemon(token, password, o.localNotify, port)
 	d.reconcile()
 	go d.stats.collect()
@@ -232,7 +237,7 @@ func daemonBanner(d *Daemon, o opts, port int) string {
 	if primary == "" {
 		primary, scope = withToken(fmt.Sprintf("http://localhost:%d", port), d.token), "local"
 	}
-	return renderSummary(primary, scope, d.password, qrOf(primary))
+	return renderSummary(primary, scope, qrOf(primary))
 }
 
 func qrOf(url string) string {
@@ -289,6 +294,7 @@ func freePort(host string) (net.Listener, int) {
 type opts struct {
 	local, noAuth, tunnel, localNotify bool
 	password                           string
+	port                               int
 	tunnelSet, notifySet, passwordSet  bool
 }
 
@@ -313,6 +319,11 @@ func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 			if i+1 < len(argv) {
 				i++
 				o.password, o.passwordSet = argv[i], true
+			}
+		case "--listen-port":
+			if i+1 < len(argv) {
+				i++
+				o.port, _ = strconv.Atoi(argv[i])
 			}
 		default:
 			rest = append(rest, a)

@@ -2,7 +2,6 @@
   <div v-if="m.kind === 'text'" class="row" :class="m.role">
     <div class="bubble-wrap" :class="{ clipped: clip && !open }" @click="onExpand">
       <div ref="bubbleEl" class="bubble" :class="m.role" v-html="renderText(m.text)"></div>
-      <span v-if="clip && !open" class="expand-hint"><Chevron /></span>
     </div>
   </div>
 

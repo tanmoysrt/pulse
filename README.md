@@ -30,6 +30,7 @@ opening the link by hand asks for the password (rate-limited to 5 tries per
 |------|--------|
 | `--lan` / `--tunnel` | Choose LAN or a public tunnel without being asked. |
 | `--local` | Loopback only — no LAN address or public tunnel. |
+| `--listen-port <n>` | Port to serve on (default 4444). |
 | `--password <pw>` | Set the login password (else a random one is generated). |
 | `--notify` | Enable desktop notifications on this machine. |
 | `--no-auth` | Drop auth entirely (trusted networks only). |
