@@ -1,12 +1,25 @@
-# Pulse
+<p align="center">
+  <img src=".github/assets/pulse-logo.svg" alt="Pulse" height="72">
+</p>
 
-Drive your terminal coding agents from your phone.
+<h1 align="center">Pulse</h1>
 
-Pulse is a small daemon that puts every
-[Claude Code](https://claude.com/claude-code), [Codex](https://openai.com/codex),
-and [OpenCode](https://opencode.ai) session on your machine behind one web UI.
-Browse past transcripts, start or resume a chat, and follow it live: send
-prompts, approve tools, switch models, and get notified when a session needs you.
+<p align="center">
+  <strong>Drive your terminal coding agents from your phone</strong>
+</p>
+
+Pulse makes it simple to run [Claude Code](https://claude.com/claude-code),
+[Codex](https://openai.com/codex), and [OpenCode](https://opencode.ai) from your
+phone. Use the mobile UI to browse transcripts, start or resume chats, send
+prompts, approve tools, switch models, and get notified when an agent needs you.
+
+## Key Features
+
+- Control Claude Code, Codex, and OpenCode from one mobile UI.
+- Start new sessions or resume existing sessions from your phone.
+- Stream transcripts live, send prompts, and approve tool calls remotely.
+- Switch models and receive notifications when an agent needs attention.
+- Keep each agent's existing history and global configuration untouched.
 
 ## Install
 
