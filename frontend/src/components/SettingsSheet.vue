@@ -36,13 +36,7 @@
 
           <div class="set-divider"></div>
 
-          <div class="set-row">
-            <div class="set-row-main">
-              <div class="set-row-sub">Signed in as</div>
-              <div class="set-row-title">{{ user || '…' }}</div>
-            </div>
-            <button class="btn btn-ghost" @click="doLogout">Log out</button>
-          </div>
+          <button class="btn btn-ghost btn-block" @click="doLogout">Log out</button>
         </div>
       </div>
     </div>
@@ -52,7 +46,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getStats, getMe, logout } from '../lib/api'
+import { getStats, logout } from '../lib/api'
 import Icon from './Icon.vue'
 import Sparkline from './Sparkline.vue'
 
@@ -61,7 +55,6 @@ defineEmits(['close', 'toggle-push'])
 
 const router = useRouter()
 const samples = ref([])
-const user = ref('')
 let poll = null
 
 const hasStats = computed(() => samples.value.length > 1)
@@ -82,7 +75,7 @@ const metrics = computed(() => {
       values: s.map((x) => x.mem), display: Math.round(last.mem || 0) + '%' },
     { key: 'net', icon: 'activity', label: 'Network', color: '#10b981', max: null,
       values: s.map((x) => (x.rx || 0) + (x.tx || 0)),
-      display: 'down ' + fmtRate(last.rx || 0) + '  up ' + fmtRate(last.tx || 0) },
+      display: '↓ ' + fmtRate(last.rx || 0) + '   ↑ ' + fmtRate(last.tx || 0) },
   ]
 })
 
@@ -94,10 +87,6 @@ async function doLogout() {
   router.replace('/login')
 }
 
-onMounted(async () => {
-  refresh()
-  poll = setInterval(refresh, 5000)
-  try { user.value = (await getMe()).user || '' } catch (e) { /* leave blank */ }
-})
+onMounted(() => { refresh(); poll = setInterval(refresh, 5000) })
 onUnmounted(() => clearInterval(poll))
 </script>

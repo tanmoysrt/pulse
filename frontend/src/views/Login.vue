@@ -11,7 +11,7 @@
           placeholder="Password" :disabled="locked" aria-label="Password"
         />
         <button type="submit" class="btn btn-primary btn-block" :disabled="locked || !password || busy">
-          {{ busy ? 'Checking…' : 'Unlock' }}
+          {{ busy ? 'Logging in…' : 'Log in' }}
         </button>
       </form>
 

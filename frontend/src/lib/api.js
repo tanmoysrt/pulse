@@ -31,7 +31,6 @@ export async function login(password) {
 }
 
 export const getStats = () => getJSON('/api/stats')
-export const getMe = () => getJSON('/api/me')
 export const logout = () => post('/api/logout')
 
 export const listSessions = () => getJSON('/api/sessions')

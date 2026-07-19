@@ -633,10 +633,10 @@
       flex: none; width: 46px; height: 27px; border: 0; border-radius: 999px; background: var(--hover); cursor: pointer;
       padding: 0; position: relative; transition: background 0.18s;
     }
-    .toggle.on { background: #22c55e; }
+    .toggle.on { background: var(--ink); }
     .toggle:disabled { opacity: 0.4; cursor: default; }
-    .toggle-knob { position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 999px; background: #fff; transition: transform 0.18s; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
-    .toggle.on .toggle-knob { transform: translateX(19px); }
+    .toggle-knob { position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 999px; background: #fff; transition: transform 0.18s, background 0.18s; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+    .toggle.on .toggle-knob { transform: translateX(19px); background: var(--bg); }
     /* Ghost stat rows — no boxes, just the data */
     .stat { padding: 10px 0; }
     .stat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
