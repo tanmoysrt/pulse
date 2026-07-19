@@ -403,6 +403,25 @@
     }
     .notif-btn:hover { background: var(--hover); color: var(--ink); }
     .notif-btn.on { color: var(--ink); border-color: var(--ink); }
+    .home-search {
+      display: flex; align-items: center; gap: 8px; margin: 0 16px 4px;
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface-2); color: var(--subtle);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .home-search:focus-within { border-color: var(--subtle); background: var(--bg); }
+    .home-search input {
+      flex: 1; min-width: 0; border: 0; background: none; outline: none;
+      font: inherit; font-size: 14px; color: var(--ink);
+    }
+    .home-search input::placeholder { color: var(--subtle); }
+    .home-search input::-webkit-search-cancel-button { display: none; }
+    .search-clear {
+      flex: none; width: 20px; height: 20px; border: 0; border-radius: 999px; background: var(--hover);
+      color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .search-clear:hover { background: var(--border); color: var(--ink); }
     .home-list { flex: 1; overflow-y: auto; padding: 6px 16px calc(24px + env(safe-area-inset-bottom)); }
     .home-section { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--subtle); margin: 16px 8px 8px; }
     .card {

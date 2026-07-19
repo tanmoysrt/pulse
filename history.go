@@ -18,8 +18,8 @@ import (
 
 // Caps on surfaced transcripts; listing reads each file's head for a title.
 const (
-	histPerTool = 40
-	histTotal   = 90
+	histPerTool = 150
+	histTotal   = 350
 )
 
 // historyList gathers recent transcripts from every installed agent, newest first.

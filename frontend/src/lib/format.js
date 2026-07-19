@@ -67,6 +67,20 @@ export function timeAgo(ms) {
   return new Date(ms).toLocaleDateString()
 }
 
+// Groups a timestamp into a coarse recency bucket for section headers. Compares
+// calendar days (not elapsed hours) so yesterday morning reads as "Yesterday".
+export function dateBucket(ms) {
+  if (!ms) return 'Older'
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const today = startOfDay(new Date())
+  const days = Math.round((today - startOfDay(new Date(ms))) / 86400000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return 'Previous 7 days'
+  if (days < 30) return 'Previous 30 days'
+  return 'Older'
+}
+
 export function isImageType(type) { return /^image\//.test(type || '') }
 export function fileExtLabel(name) {
   const m = /\.([A-Za-z0-9]{1,6})$/.exec(name || '')

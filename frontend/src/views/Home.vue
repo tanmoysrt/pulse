@@ -13,6 +13,14 @@
       </div>
     </div>
 
+    <div v-if="hasAny" class="home-search">
+      <Icon name="search" :size="15" />
+      <input v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" />
+      <button v-if="query" class="search-clear" aria-label="Clear search" @click="query = ''">
+        <Icon name="x" :size="14" />
+      </button>
+    </div>
+
     <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
       <template #default="{ item }">
         <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
@@ -30,6 +38,7 @@
       </template>
     </VirtualList>
     <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
+    <div v-else-if="query" class="home-list home-empty"><h2>No matches</h2><p>Nothing matches “{{ query }}”.</p></div>
     <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Start one with “New chat”.</p></div>
 
     <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
@@ -41,7 +50,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
-import { baseName, timeAgo } from '../lib/format'
+import { baseName, timeAgo, dateBucket } from '../lib/format'
 import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
 import NewChatModal from '../components/NewChatModal.vue'
 import AgentLogo from '../components/AgentLogo.vue'
@@ -55,6 +64,9 @@ const loaded = ref(false)
 const error = ref(false)
 const showModal = ref(false)
 const installed = ref([])
+const query = ref('')
+
+const hasAny = computed(() => live.value.length > 0 || history.value.length > 0)
 
 // Notifications are a daemon-level setting: one browser subscription covers
 // every session, so it lives here rather than inside a chat.
@@ -74,16 +86,31 @@ async function toggleNotifs() {
 
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
 
-// Flatten the two sections into one list the virtualizer can window over.
+function matches(s) {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return true
+  return cardTitle(s).toLowerCase().includes(q) || (s.dir || '').toLowerCase().includes(q)
+}
+
+// Flatten sections into one list the virtualizer can window over. Live sessions
+// stay pinned under "Active"; history is bucketed by recency so the time span
+// each transcript spans stays legible.
 const rows = computed(() => {
   const out = []
-  if (live.value.length) {
+  const liveRows = live.value.filter(matches)
+  if (liveRows.length) {
     out.push({ type: 'header', text: 'Active', key: 'sec-active' })
-    for (const s of live.value) out.push({ type: 'card', s, live: true, key: 'l' + s.id })
+    for (const s of liveRows) out.push({ type: 'card', s, live: true, key: 'l' + s.id })
   }
-  if (history.value.length) {
-    out.push({ type: 'header', text: 'History', key: 'sec-history' })
-    for (const s of history.value) out.push({ type: 'card', s, live: false, key: 'h' + s.id })
+  let bucket = null
+  for (const s of history.value) {
+    if (!matches(s)) continue
+    const label = dateBucket(s.updated)
+    if (label !== bucket) {
+      bucket = label
+      out.push({ type: 'header', text: label, key: 'sec-' + label })
+    }
+    out.push({ type: 'card', s, live: false, key: 'h' + s.id })
   }
   return out
 })
