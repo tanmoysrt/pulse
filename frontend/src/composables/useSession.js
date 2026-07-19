@@ -105,6 +105,7 @@ export function useSession(id, seedAgent = '', seedTitle = '') {
   const interrupt = () => post(base + '/interrupt')
   const decide = (pid, decision) => post(base + '/permission', { id: pid, decision })
   const clear = () => post(base + '/clear')
+  const compact = () => post(base + '/compact')
   const close = () => post(base + '/close')
   const setMode = (mode) => { state.mode = mode; return post(base + '/mode', { mode }) }
   const setModel = (o) => { state.modelLabel = o.label; return post(base + '/model', { model: o.id, label: o.label }) }
@@ -119,6 +120,6 @@ export function useSession(id, seedAgent = '', seedTitle = '') {
   return {
     state, elapsed, isBusy, modes, models, efforts, workingVerb, appReady,
     connect, disconnect,
-    send, interrupt, decide, clear, close, setMode, setModel, setEffort, uploadFile,
+    send, interrupt, decide, clear, compact, close, setMode, setModel, setEffort, uploadFile,
   }
 }

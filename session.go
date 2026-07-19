@@ -542,6 +542,15 @@ func (s *Session) apiClear(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+// apiCompact asks the agent to summarize and shrink its context. Unlike clear,
+// pulse's transcript is kept — the agent posts a compacted summary inline.
+func (s *Session) apiCompact(c echo.Context) error {
+	if err := tmuxSendText(s.tmuxSession, "/compact"); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.NoContent(http.StatusOK)
+}
+
 var modelAliases = map[string]bool{
 	"default": true, "opus": true, "sonnet": true, "haiku": true, "opusplan": true,
 }

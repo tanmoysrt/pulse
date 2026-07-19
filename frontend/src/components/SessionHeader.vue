@@ -24,6 +24,7 @@
           <Icon name="ellipsis-vertical" :size="16" />
         </button>
         <div v-if="open" class="kebab-menu">
+          <button class="menuitem" @click="run('compact')">Compact chat</button>
           <button class="menuitem" @click="run('clear')">Clear chat</button>
           <button class="menuitem danger" @click="run('close')">Close session</button>
         </div>
@@ -41,7 +42,7 @@ const props = defineProps({
   title: String, status: String, todos: { type: Array, default: () => [] },
   tasksOpen: Boolean, readonly: Boolean, shadow: Boolean, resumable: Boolean,
 })
-const emit = defineEmits(['back', 'toggleTasks', 'clear', 'close', 'resume'])
+const emit = defineEmits(['back', 'toggleTasks', 'clear', 'compact', 'close', 'resume'])
 
 const open = ref(false)
 const root = ref(null)

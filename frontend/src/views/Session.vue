@@ -5,7 +5,7 @@
     <SessionHeader
       :title="state.title" :status="state.status" :todos="state.todos" :tasksOpen="tasksOpen"
       :shadow="shadow"
-      @back="goHome" @toggleTasks="tasksOpen = !tasksOpen" @clear="onClear" @close="onClose" />
+      @back="goHome" @toggleTasks="tasksOpen = !tasksOpen" @clear="onClear" @compact="compact" @close="onClose" />
 
     <TasksSheet v-if="tasksOpen && state.todos.length" :todos="state.todos" />
 
@@ -67,7 +67,7 @@ const id = route.params.id
 
 const {
   state, elapsed, isBusy, modes, models, efforts, workingVerb, appReady,
-  connect, send, interrupt, decide, clear, close, setMode, setModel, setEffort, uploadFile,
+  connect, send, interrupt, decide, clear, compact, close, setMode, setModel, setEffort, uploadFile,
 } = useSession(id, route.query.a || '', route.query.t || '')
 
 const transcript = ref(null)

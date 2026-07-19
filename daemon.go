@@ -367,6 +367,7 @@ func startServer(d *Daemon, ln net.Listener) {
 	g.POST("/interrupt", d.withSession((*Session).apiInterrupt))
 	g.POST("/close", d.withSession((*Session).apiClose))
 	g.POST("/clear", d.withSession((*Session).apiClear))
+	g.POST("/compact", d.withSession((*Session).apiCompact))
 	g.POST("/model", d.withSession((*Session).apiModel))
 	g.GET("/models", d.withSession((*Session).apiModels))
 	g.POST("/effort", d.withSession((*Session).apiEffort))
