@@ -86,13 +86,16 @@ function onClose() {
 function onDecide(decision) { if (state.pending) decide(state.pending.id, decision) }
 
 function onSend({ full, caption, snapshot }, done) {
+  // Show the message immediately; drop it again if the send is rejected (the
+  // composer restores the text on the same failure signal).
+  const item = { caption, attachments: snapshot }
+  state.queued.push(item)
+  nextTick(() => transcript.value && transcript.value.scrollDown(true))
+  const drop = () => { const i = state.queued.indexOf(item); if (i >= 0) state.queued.splice(i, 1) }
   send(full).then((res) => {
-    if (res.ok) {
-      state.queued.push({ caption, attachments: snapshot })
-      nextTick(() => transcript.value && transcript.value.scrollDown(true))
-    }
+    if (!res.ok) drop()
     done(res.ok)
-  }).catch(() => done(false))
+  }).catch(() => { drop(); done(false) })
 }
 
 // Leaving the session (closed by daemon) returns home.

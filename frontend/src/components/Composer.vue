@@ -11,9 +11,9 @@
         </div>
       </div>
 
-      <textarea ref="input" rows="1" v-model="text" :disabled="disabled"
+      <textarea ref="input" rows="1" :value="text" :disabled="disabled"
         :placeholder="disabled ? 'Session closed' : ('Message ' + agentLabel(agent) + '…')"
-        @input="autogrow" @keydown="onKeydown"></textarea>
+        @input="onInput" @keydown="onKeydown"></textarea>
 
       <div class="composer-bottom">
         <div class="toolbar">
@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import SessionSettingsModal from './SessionSettingsModal.vue'
 import Icon from './Icon.vue'
 import { agentLabel } from '../constants'
@@ -62,7 +62,6 @@ const emit = defineEmits(['send', 'stop', 'setMode', 'setModel', 'setEffort'])
 
 const text = ref('')
 const attachments = ref([])
-const sending = ref(false)
 const optsOpen = ref(false)
 let seq = 0
 
@@ -74,13 +73,15 @@ const modeLabel = computed(() => (props.modes.find((m) => m.id === props.mode) |
 const hasOptions = computed(() => props.modes.length > 0 || props.models.length > 0 || props.efforts.length > 0)
 const ready = computed(() => attachments.value.filter((a) => a.status === 'done'))
 const uploading = computed(() => attachments.value.some((a) => a.status === 'uploading'))
-const canSend = computed(() => !props.disabled && !sending.value && !uploading.value && (!!text.value.trim() || ready.value.length > 0))
+// Enabled the moment there's something to send. We bind :value/@input (not
+// v-model) so a keystroke registers immediately, even mid IME composition where
+// v-model would defer its update until the field loses focus.
+const canSend = computed(() => !props.disabled && !uploading.value && (!!text.value.trim() || ready.value.length > 0))
 
-// Once the session is busy the send was accepted, so clear the in-flight guard
-// even if its send callback was missed — otherwise the button can stay stuck
-// disabled with a message still typed.
-watch(() => props.busy, (b) => { if (b) sending.value = false })
-
+function onInput(e) {
+  text.value = e.target.value
+  autogrow()
+}
 function autogrow() {
   const el = input.value
   el.style.height = 'auto'
@@ -110,18 +111,24 @@ function removeAttachment(id) {
 }
 function doSend() {
   if (!canSend.value) return
-  sending.value = true
   const caption = text.value.trim()
   const paths = ready.value.map((a) => a.path).join('\n')
   const full = paths && caption ? paths + '\n' + caption : (paths || caption)
   const snapshot = ready.value.map((a) => ({ name: a.name, type: a.type, previewUrl: a.previewUrl }))
+
+  // Clear right away so sending never feels like it blocks; put the text and
+  // attachments back if the send is rejected.
+  const prevText = text.value
+  const prevAttachments = attachments.value.slice()
+  attachments.value = attachments.value.filter((a) => a.status !== 'done')
+  text.value = ''
+  nextTick(autogrow)
+
   emit('send', { full, caption, snapshot }, (ok) => {
-    sending.value = false
-    if (ok) {
-      attachments.value = attachments.value.filter((a) => a.status !== 'done')
-      text.value = ''
-      nextTick(autogrow)
-    }
+    if (ok) return
+    text.value = prevText
+    attachments.value = prevAttachments
+    nextTick(autogrow)
   })
 }
 
