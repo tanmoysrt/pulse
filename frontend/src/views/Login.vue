@@ -1,7 +1,7 @@
 <template>
   <div class="login">
     <div class="login-card">
-      <span class="login-logo">P</span>
+      <PulseLogo class="login-logo" />
       <h1 class="login-title">Pulse</h1>
       <p class="login-sub">Enter your password to continue</p>
 
@@ -25,6 +25,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { login } from '../lib/api'
+import PulseLogo from '../components/PulseLogo.vue'
 
 const router = useRouter()
 const password = ref('')

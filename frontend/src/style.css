@@ -448,7 +448,7 @@
       background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(18px);
     }
     .home-brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; color: var(--ink); letter-spacing: -0.02em; }
-    .home-brand .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: var(--bg); display: flex; align-items: center; justify-content: center; }
+    .home-brand .logo { width: 24px; height: 24px; color: var(--ink); }
     .fab {
       position: fixed; z-index: 40; right: 20px; bottom: calc(22px + env(safe-area-inset-bottom));
       width: 54px; height: 54px; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg);
@@ -586,7 +586,7 @@
     /* Login page */
     .login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
     .login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-    .login-logo { width: 46px; height: 46px; border-radius: 12px; background: var(--ink); color: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 22px; }
+    .login-logo { width: 54px; height: 54px; color: var(--ink); }
     .login-title { margin: 16px 0 4px; font-size: 22px; font-weight: 650; color: var(--ink); letter-spacing: -0.02em; }
     .login-sub { margin: 0 0 22px; font-size: 14.5px; color: var(--muted); }
     .login-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }

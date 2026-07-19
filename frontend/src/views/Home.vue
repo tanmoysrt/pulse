@@ -3,7 +3,7 @@
     <div v-if="!loaded" class="boot-loader"><div class="pulse-rings"><span></span><span></span><span></span></div></div>
 
     <div class="home-head">
-      <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
+      <div class="home-brand"><PulseLogo class="logo" /><span>Pulse</span></div>
       <div class="home-actions">
         <button v-if="hasAny" class="round-btn" :class="{ on: searchOpen }" title="Search" aria-label="Search" @click="toggleSearch">
           <Icon name="search" :size="16" />
@@ -67,6 +67,7 @@ import NotifyPrompt from '../components/NotifyPrompt.vue'
 import AgentLogo from '../components/AgentLogo.vue'
 import Icon from '../components/Icon.vue'
 import VirtualList from '../components/VirtualList.vue'
+import PulseLogo from '../components/PulseLogo.vue'
 
 const router = useRouter()
 const live = ref([])
