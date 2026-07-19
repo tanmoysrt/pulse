@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"math/big"
 	"net/http"
 	"sync"
 	"time"
@@ -29,18 +28,6 @@ func randomToken() string {
 		panic("pulse: unable to generate auth token: " + err.Error())
 	}
 	return hex.EncodeToString(b)
-}
-
-// randomPassword returns a short, human-typeable password (no ambiguous chars) for
-// the login page when the user doesn't supply their own.
-func randomPassword() string {
-	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
-	b := make([]byte, 10)
-	for i := range b {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
-		b[i] = alphabet[n.Int64()]
-	}
-	return string(b)
 }
 
 // withToken appends the auth token to a base URL as a query param so the first

@@ -42,7 +42,7 @@ pulse attach <id> # reattach to a running session
 ```
 
 The first run walks you through how Pulse should be reachable (LAN or a public
-tunnel), a login password (random if you leave it blank), and whether to show
+tunnel), a required login password, and whether to show
 desktop notifications. On later runs, press Enter to reuse those saved choices,
 or select **Redo setup** to replace them. Pulse stores only a bcrypt password
 hash, never the password itself. Set a port explicitly with `--listen-port`.
@@ -59,7 +59,6 @@ prompt.
 | `--listen-port <n>` | Port to serve on (default 4444). |
 | `--password <pw>` | Set the login password (otherwise one is generated). |
 | `--notify` | Enable desktop notifications on this machine. |
-| `--no-auth` | Drop auth entirely (trusted networks only). |
 
 Set `PULSE_DEBUG=1` to log requests.
 

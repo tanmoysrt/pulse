@@ -93,7 +93,7 @@ func setupSteps(o opts) []string {
 	if !o.local && !o.tunnelSet {
 		steps = append(steps, "expose")
 	}
-	if !o.noAuth && !o.passwordSet {
+	if !o.passwordSet {
 		steps = append(steps, "password")
 	}
 	if !o.notifySet {
@@ -103,7 +103,7 @@ func setupSteps(o opts) []string {
 }
 
 func hasSetupOverrides(o opts) bool {
-	return o.local || o.noAuth || o.tunnelSet || o.notifySet || o.passwordSet || o.portSet
+	return o.local || o.tunnelSet || o.notifySet || o.passwordSet || o.portSet
 }
 
 func applySavedSetup(o opts) opts {
@@ -121,7 +121,7 @@ func applySetup(o opts, saved *setupRecord) opts {
 	if !o.notifySet {
 		o.localNotify = saved.Notify
 	}
-	if !o.noAuth && !o.passwordSet {
+	if !o.passwordSet {
 		o.passwordHash = saved.PasswordHash
 	}
 	return o
@@ -135,6 +135,7 @@ type wizModel struct {
 	input  textinput.Model
 	quit   bool
 	saved  *setupRecord
+	error  string
 }
 
 func (m wizModel) Init() tea.Cmd { return textinput.Blink }
@@ -143,7 +144,7 @@ func (m *wizModel) focusStep() {
 	m.input.Reset()
 	switch m.step() {
 	case "password":
-		m.input.Placeholder = "leave blank to auto-generate"
+		m.input.Placeholder = "required"
 		m.input.EchoMode = textinput.EchoPassword
 		m.input.Focus()
 	default:
@@ -186,6 +187,7 @@ func (m wizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // commit records the current step's answer and advances (or quits on the last).
 func (m wizModel) commit() (tea.Model, tea.Cmd) {
+	m.error = ""
 	switch m.step() {
 	case "saved":
 		if m.cursor == 0 {
@@ -200,6 +202,10 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 		m.o.tunnel = m.cursor == 1
 	case "password":
 		m.o.password = strings.TrimSpace(m.input.Value())
+		if m.o.password == "" {
+			m.error = "Enter a login password to continue."
+			return m, nil
+		}
 	case "notify":
 		m.o.localNotify = m.cursor == 1
 	}
@@ -213,37 +219,28 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 
 func (m wizModel) View() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s  %s\n\n", accentStyle.Render("◆ Pulse"), dimStyle.Render(fmt.Sprintf("setup · %d of %d", m.i+1, len(m.steps))))
+	fmt.Fprintf(&b, "%s\n%s\n\n", pulseWordmark(), dimStyle.Render(fmt.Sprintf("setup · %d of %d", m.i+1, len(m.steps))))
 
 	switch m.step() {
 	case "saved":
-		mode := "Local network"
-		if m.saved.Tunnel {
-			mode = "Public tunnel"
-		}
 		b.WriteString(titleStyle.Render("Use saved setup?") + "\n\n")
-		b.WriteString(dimStyle.Render(fmt.Sprintf("%s · desktop notifications %s", mode, onOff(m.saved.Notify))) + "\n\n")
-		b.WriteString(m.renderChoices([]choice{{"Start with saved setup", "use these settings"}, {"Redo setup", "replace the saved settings"}}))
+		b.WriteString(m.renderChoices([]choice{{"Start Pulse", "continue with saved setup"}, {"Redo setup", "choose everything again"}}))
 	case "expose":
 		b.WriteString(titleStyle.Render("How should pulse be reachable?") + "\n\n")
 		b.WriteString(m.renderChoices(exposeChoices))
 	case "password":
 		b.WriteString(titleStyle.Render("Set a login password") + "\n")
-		b.WriteString(dimStyle.Render("Used on the login page; scanning the QR skips it.") + "\n\n")
+		b.WriteString(dimStyle.Render("Required for the login page; scanning the QR skips it.") + "\n\n")
 		b.WriteString("  " + m.input.View() + "\n")
 	case "notify":
 		b.WriteString(titleStyle.Render("Desktop notifications on this machine?") + "\n\n")
 		b.WriteString(m.renderChoices(notifyChoices))
 	}
+	if m.error != "" {
+		b.WriteString("\n" + m.error + "\n")
+	}
 	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
-}
-
-func onOff(value bool) string {
-	if value {
-		return "on"
-	}
-	return "off"
 }
 
 func (m wizModel) renderChoices(choices []choice) string {
@@ -258,27 +255,31 @@ func (m wizModel) renderChoices(choices []choice) string {
 	return b.String()
 }
 
-// renderSummary is the post-setup screen: the QR and the URL to open. Kept
-// spare on purpose; the password is never printed (scan the QR, or you set it).
-func renderSummary(url, scope, qr string) string {
-	label := map[string]string{"public": "Public link", "LAN": "On your network", "local": "On this machine"}[scope]
-	var b strings.Builder
-	b.WriteString("\n" + accentStyle.Render("◆ Pulse is running") + "\n\n")
-	if qr != "" {
-		b.WriteString(indent(qr, 2) + "\n\n")
+// renderSummary keeps the connection details beside the QR so both scan and
+// command options are visible without scrolling.
+func renderSummary(urls []string, qr string) string {
+	left := strings.Builder{}
+	left.WriteString(pulseWordmark() + "\n\n")
+	left.WriteString(dimStyle.Render("URLs:") + "\n")
+	for _, url := range urls {
+		left.WriteString("- " + accentStyle.Render(url) + "\n")
 	}
-	b.WriteString("  " + dimStyle.Render(label) + "\n")
-	b.WriteString("  " + accentStyle.Render(url) + "\n")
-	b.WriteString("\n  " + dimStyle.Render("pulse claude · codex · opencode  starts a session") + "\n")
-	b.WriteString("  " + dimStyle.Render("Ctrl-C  quits") + "\n")
-	return b.String()
+	left.WriteString("\n")
+	left.WriteString(dimStyle.Render("Commands:") + "\n")
+	left.WriteString("- pulse claude\n- pulse opencode\n- pulse codex\n- pulse ls\n- pulse attach <id>\n- pulse version\n\n")
+	left.WriteString(dimStyle.Render("Ctrl-C quits"))
+
+	if qr == "" {
+		return "\n" + left.String() + "\n"
+	}
+	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left.String(), "          ", strings.TrimRight(qr, "\n")) + "\n"
 }
 
-func indent(s string, n int) string {
-	pad := strings.Repeat(" ", n)
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = pad + l
-	}
-	return strings.Join(lines, "\n")
+// pulseWordmark is a terminal-safe rendering of the Pulse name.
+func pulseWordmark() string {
+	return accentStyle.Render(` ____  _   _ _     ____  _____
+|  _ \| | | | |   / ___|| ____|
+| |_) | | | | |   \___ \|  _|
+|  __/| |_| | |___ ___) | |___
+|_|    \___/|_____|____/|_____|`)
 }

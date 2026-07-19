@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -48,7 +49,7 @@ func main() {
 	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [--no-auth] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
@@ -152,21 +153,19 @@ func runDaemon(o opts) {
 	if o.local {
 		bindHost = "127.0.0.1"
 	}
-	token, passwordHash := "", ""
-	if !o.noAuth {
-		token = randomToken()
-		passwordHash = o.passwordHash
-		if passwordHash == "" {
-			password := o.password
-			if password == "" {
-				password = randomPassword()
-			}
-			var err error
-			passwordHash, err = hashPassword(password)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "pulse: could not secure password:", err)
-				return
-			}
+	token := randomToken()
+	passwordHash := o.passwordHash
+	if passwordHash == "" {
+		password := strings.TrimSpace(o.password)
+		if password == "" {
+			fmt.Fprintln(os.Stderr, "pulse: a login password is required")
+			return
+		}
+		var err error
+		passwordHash, err = hashPassword(password)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pulse: could not secure password:", err)
+			return
 		}
 	}
 
@@ -176,9 +175,7 @@ func runDaemon(o opts) {
 	}
 	ln, port := listen(bindHost, pref)
 	d := newDaemon(token, passwordHash, o.localNotify, port)
-	if !o.noAuth {
-		writeSetup(setupRecord{Tunnel: o.tunnel, Notify: o.localNotify, PasswordHash: passwordHash})
-	}
+	writeSetup(setupRecord{Tunnel: o.tunnel, Notify: o.localNotify, PasswordHash: passwordHash})
 	d.reconcile()
 	go d.stats.collect()
 	startServer(d, ln)
@@ -236,27 +233,29 @@ func promptStopAll(n int) bool {
 	}
 }
 
-// daemonBanner is the startup screen: the primary URL, a QR of it, and the login
-// password — deliberately minimal (only what you need to open pulse on a phone).
+// daemonBanner is the startup screen: the primary URL, its QR, and useful commands.
 func daemonBanner(d *Daemon, o opts, port int) string {
-	// The primary URL is what the QR encodes and what you scan/open.
-	primary, scope := "", ""
+	localhost := fmt.Sprintf("http://localhost:%d", port)
+	urls := []string{localhost}
+	primary := localhost
 	if o.tunnel && !o.local {
 		if u, err := startLocalTunnel(port); err != nil {
 			fmt.Fprintln(os.Stderr, "pulse: tunnel unavailable, falling back to LAN:", err)
 		} else {
-			primary, scope = withToken(u, d.token), "public"
+			primary = u
+			urls = append([]string{u}, urls...)
 		}
 	}
-	if primary == "" && !o.local {
-		if ip := lanIP(); ip != "" {
-			primary, scope = withToken(fmt.Sprintf("http://%s:%d", ip, port), d.token), "LAN"
+	if !o.local {
+		for _, ip := range interfaceIPs() {
+			url := fmt.Sprintf("http://%s:%d", ip, port)
+			urls = append(urls, url)
+			if primary == localhost {
+				primary = url
+			}
 		}
 	}
-	if primary == "" {
-		primary, scope = withToken(fmt.Sprintf("http://localhost:%d", port), d.token), "local"
-	}
-	return renderSummary(primary, scope, qrOf(primary))
+	return renderSummary(urls, qrOf(withToken(primary, d.token)))
 }
 
 func qrOf(url string) string {
@@ -311,7 +310,7 @@ func freePort(host string) (net.Listener, int) {
 // opts holds daemon startup choices. The *Set fields record whether a flag fixed
 // the value, so the wizard only prompts for what the user left open.
 type opts struct {
-	local, noAuth, tunnel, localNotify         bool
+	local, tunnel, localNotify                 bool
 	password                                   string
 	port                                       int
 	tunnelSet, notifySet, passwordSet, portSet bool
@@ -327,8 +326,6 @@ func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 		switch a {
 		case "--local":
 			o.local = true
-		case "--no-auth":
-			o.noAuth = true
 		case "--tunnel":
 			o.tunnel, o.tunnelSet = true, true
 		case "--lan":
@@ -356,11 +353,31 @@ func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 	return
 }
 
-func lanIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+func interfaceIPs() []string {
+	interfaces, err := net.Interfaces()
 	if err != nil {
-		return ""
+		return nil
 	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	seen := map[string]bool{}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ip, _, err := net.ParseCIDR(addr.String())
+			if err == nil && ip.To4() != nil && !ip.IsUnspecified() {
+				seen[ip.String()] = true
+			}
+		}
+	}
+	ips := make([]string, 0, len(seen))
+	for ip := range seen {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+	return ips
 }

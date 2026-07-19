@@ -18,11 +18,13 @@ func qrTerminal(content string) (string, error) {
 	bm := q.Bitmap() // includes the quiet-zone border; true = dark module
 
 	const (
-		blackFG, whiteFG = 30, 97
-		blackBG, whiteBG = 40, 107
+		blackFG, whiteFG  = 30, 97
+		blackBG, whiteBG  = 40, 107
+		horizontalPadding = 5
 	)
 	var b strings.Builder
 	for y := 0; y < len(bm); y += 2 {
+		fmt.Fprintf(&b, "\x1b[%dm%*s", whiteBG, horizontalPadding, "")
 		for x := range bm[y] {
 			top := bm[y][x]
 			bottom := false
@@ -38,6 +40,7 @@ func qrTerminal(content string) (string, error) {
 			}
 			fmt.Fprintf(&b, "\x1b[%d;%dm▀", fg, bg)
 		}
+		fmt.Fprintf(&b, "\x1b[%dm%*s", whiteBG, horizontalPadding, "")
 		b.WriteString("\x1b[0m\n")
 	}
 	return b.String(), nil

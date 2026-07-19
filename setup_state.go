@@ -32,6 +32,12 @@ func readSetup() (*setupRecord, error) {
 	if err := json.Unmarshal(b, &setup); err != nil {
 		return nil, err
 	}
+	if setup.PasswordHash == "" {
+		return nil, os.ErrInvalid
+	}
+	if _, err := bcrypt.Cost([]byte(setup.PasswordHash)); err != nil {
+		return nil, err
+	}
 	return &setup, nil
 }
 
