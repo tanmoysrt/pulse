@@ -381,10 +381,11 @@
       color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s;
     }
     .modal-x:hover { background: var(--hover); color: var(--ink); }
-    .opt-seg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .opt-seg { display: flex; gap: 6px; margin-bottom: 16px; }
     .opt-seg button {
-      flex: 1 1 auto; min-width: 72px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-      background: var(--surface-2); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+      flex: 1 1 0; min-width: 0; padding: 8px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface-2); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
+      white-space: nowrap; transition: all 0.15s;
     }
     .opt-seg.cap button { text-transform: capitalize; }
     .opt-seg button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
