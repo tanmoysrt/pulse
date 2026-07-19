@@ -39,6 +39,7 @@ pulse             # start the daemon, then print the URL and a QR code to scan
 pulse claude      # spawn a session from the terminal and attach; args pass through
 pulse ls          # list running sessions
 pulse attach <id> # reattach to a running session
+pulse update      # fetch and run the interactive updater
 ```
 
 The first run walks you through how Pulse should be reachable (LAN or a public

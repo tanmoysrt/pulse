@@ -51,7 +51,7 @@ func runWizard(o opts) opts {
 }
 
 func runSavedWizard(o opts, saved *setupRecord) opts {
-	m := wizModel{steps: []string{"saved"}, o: o, saved: saved}
+	m := wizModel{steps: []string{"saved"}, o: o, input: newWizardInput(), saved: saved}
 	res, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return o
@@ -70,11 +70,7 @@ func runSetupWizard(o opts) opts {
 		return o
 	}
 
-	ti := textinput.New()
-	ti.CharLimit = 64
-	ti.Width = 34
-
-	m := wizModel{steps: steps, o: o, input: ti}
+	m := wizModel{steps: steps, o: o, input: newWizardInput()}
 	m.focusStep()
 	res, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
@@ -86,6 +82,13 @@ func runSetupWizard(o opts) opts {
 		os.Exit(0)
 	}
 	return fm.o
+}
+
+func newWizardInput() textinput.Model {
+	ti := textinput.New()
+	ti.CharLimit = 64
+	ti.Width = 34
+	return ti
 }
 
 func setupSteps(o opts) []string {
@@ -145,7 +148,6 @@ func (m *wizModel) focusStep() {
 	switch m.step() {
 	case "password":
 		m.input.Placeholder = "required"
-		m.input.EchoMode = textinput.EchoPassword
 		m.input.Focus()
 	default:
 		m.input.Blur()
@@ -284,13 +286,13 @@ func renderSummary(urls []string, qr string) string {
 	left.WriteString("\n")
 	left.WriteString(dimStyle.Render("Commands:"))
 	left.WriteString("\n")
-	left.WriteString("- pulse claude\n- pulse opencode\n- pulse codex\n- pulse ls\n- pulse attach <id>\n- pulse version\n\n")
+	left.WriteString("- pulse claude\n- pulse opencode\n- pulse codex\n- pulse ls\n- pulse attach <id>\n- pulse update\n- pulse version\n\n")
 	left.WriteString(dimStyle.Render("Ctrl-C quits"))
 
 	if qr == "" {
 		return "\n" + left.String() + "\n"
 	}
-	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left.String(), "          ", strings.TrimRight(qr, "\n")) + "\n"
+	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left.String(), "          ", "\n"+strings.TrimRight(qr, "\n")) + "\n"
 }
 
 // pulseWordmark is a terminal-safe rendering of the Pulse name.

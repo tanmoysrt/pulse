@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sort"
 	"strconv"
@@ -22,6 +23,8 @@ import (
 var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
 
 const defaultPort = 4444
+
+const installScriptURL = "https://raw.githubusercontent.com/tanmoysrt/pulse/master/install.sh"
 
 // version is stamped at build time via -ldflags "-X main.version=..."; "dev"
 // for a plain `go build`.
@@ -37,6 +40,9 @@ func main() {
 		case "ls":
 			runList()
 			return
+		case "update":
+			runUpdate()
+			return
 		case "attach":
 			if len(args) < 2 {
 				fmt.Fprintln(os.Stderr, "usage: pulse attach <id>")
@@ -49,13 +55,45 @@ func main() {
 	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id>")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id> | pulse update")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
 		return
 	}
 	runDaemon(o)
+}
+
+// runUpdate streams the official installer to sh. The installer reads its
+// confirmation from /dev/tty, so users can still answer its prompts.
+func runUpdate() {
+	fetch := exec.Command("curl", "-fsSL", installScriptURL)
+	script, err := fetch.StdoutPipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not fetch update script:", err)
+		os.Exit(1)
+	}
+	fetch.Stderr = os.Stderr
+
+	install := exec.Command("sh")
+	install.Stdin = script
+	install.Stdout = os.Stdout
+	install.Stderr = os.Stderr
+
+	if err := fetch.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not start update:", err)
+		os.Exit(1)
+	}
+	installErr := install.Run()
+	fetchErr := fetch.Wait()
+	if fetchErr != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not fetch update script:", fetchErr)
+		os.Exit(1)
+	}
+	if installErr != nil {
+		fmt.Fprintln(os.Stderr, "pulse: update failed:", installErr)
+		os.Exit(1)
+	}
 }
 
 // runList prints the daemon's live sessions.
