@@ -69,16 +69,16 @@ export function timeAgo(ms) {
 
 // Groups a timestamp into a coarse recency bucket for section headers. Compares
 // calendar days (not elapsed hours) so yesterday morning reads as "Yesterday".
+// History is capped to the last two weeks, so the tail bucket is just "Earlier".
 export function dateBucket(ms) {
-  if (!ms) return 'Older'
+  if (!ms) return 'Earlier'
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const today = startOfDay(new Date())
   const days = Math.round((today - startOfDay(new Date(ms))) / 86400000)
   if (days <= 0) return 'Today'
   if (days === 1) return 'Yesterday'
   if (days < 7) return 'Previous 7 days'
-  if (days < 30) return 'Previous 30 days'
-  return 'Older'
+  return 'Earlier'
 }
 
 export function isImageType(type) { return /^image\//.test(type || '') }

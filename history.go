@@ -12,26 +12,24 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
 
-// Caps on surfaced transcripts; listing reads each file's head for a title.
-const (
-	histPerTool = 150
-	histTotal   = 350
-)
+// Surface transcripts touched within this window; older ones stay on disk but
+// are hidden from the listing. Listing reads each file's head for a title.
+const histWindow = 14 * 24 * time.Hour
 
-// historyList gathers recent transcripts from every installed agent, newest first.
+// historyList gathers transcripts touched in the last histWindow from every
+// installed agent, newest first.
 func historyList() []listItem {
+	cutoff := time.Now().Add(-histWindow).UnixMilli()
 	var all []listItem
-	all = append(all, fileHistory(filepath.Join(home(), ".claude", "projects", "*", "*.jsonl"), "claude", claudeMeta)...)
-	all = append(all, fileHistory(filepath.Join(home(), ".codex", "sessions", "*", "*", "*", "rollout-*.jsonl"), "codex", codexMeta)...)
-	all = append(all, opencodeHistory()...)
+	all = append(all, fileHistory(filepath.Join(home(), ".claude", "projects", "*", "*.jsonl"), "claude", claudeMeta, cutoff)...)
+	all = append(all, fileHistory(filepath.Join(home(), ".codex", "sessions", "*", "*", "*", "rollout-*.jsonl"), "codex", codexMeta, cutoff)...)
+	all = append(all, opencodeHistory(cutoff)...)
 	sort.Slice(all, func(i, j int) bool { return all[i].Updated > all[j].Updated })
-	if len(all) > histTotal {
-		all = all[:histTotal]
-	}
 	return all
 }
 
@@ -158,17 +156,17 @@ func historyMessages(tool, locator string) ([]Message, error) {
 	return nil, fmt.Errorf("unknown tool %q", tool)
 }
 
-func fileHistory(pattern, tool string, meta func(path string) (dir, title string)) []listItem {
+func fileHistory(pattern, tool string, meta func(path string) (dir, title string), cutoff int64) []listItem {
 	paths, _ := filepath.Glob(pattern)
-	sort.Slice(paths, func(i, j int) bool { return mtimeMs(paths[i]) > mtimeMs(paths[j]) })
-	if len(paths) > histPerTool {
-		paths = paths[:histPerTool]
-	}
-	out := make([]listItem, 0, len(paths))
+	var out []listItem
 	for _, p := range paths {
+		updated := mtimeMs(p)
+		if updated < cutoff {
+			continue
+		}
 		dir, title := meta(p)
 		out = append(out, listItem{
-			ID: histRef(tool, p), Tool: tool, Dir: dir, Title: title, Updated: mtimeMs(p),
+			ID: histRef(tool, p), Tool: tool, Dir: dir, Title: title, Updated: updated,
 		})
 	}
 	return out
@@ -250,7 +248,7 @@ func codexMeta(path string) (dir, title string) {
 }
 
 // opencodeHistory reads sessions from OpenCode's SQLite store (no files on disk).
-func opencodeHistory() []listItem {
+func opencodeHistory(cutoff int64) []listItem {
 	db := opencodeDBPath()
 	if _, err := os.Stat(db); err != nil {
 		return nil
@@ -264,7 +262,7 @@ func opencodeHistory() []listItem {
 		Title     string `json:"title"`
 		Updated   int64  `json:"time_updated"`
 	}
-	q := fmt.Sprintf("SELECT id, directory, title, time_updated FROM session WHERE time_archived IS NULL ORDER BY time_updated DESC LIMIT %d", histPerTool)
+	q := fmt.Sprintf("SELECT id, directory, title, time_updated FROM session WHERE time_archived IS NULL AND time_updated >= %d ORDER BY time_updated DESC", cutoff)
 	if err := sqliteJSON(db, q, &rows); err != nil {
 		return nil
 	}
