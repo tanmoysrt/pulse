@@ -150,6 +150,9 @@ func readMem() float64 {
 			avail = v
 		}
 	}
+	if sc.Err() != nil {
+		return 0
+	}
 	if total == 0 {
 		return 0
 	}
@@ -183,6 +186,9 @@ func readNet() (rx, tx uint64) {
 		t, _ := strconv.ParseUint(fields[8], 10, 64)
 		rx += r
 		tx += t
+	}
+	if sc.Err() != nil {
+		return 0, 0
 	}
 	return rx, tx
 }

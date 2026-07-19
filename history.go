@@ -331,6 +331,9 @@ func readFileMessages(path string, parse lineParser) ([]Message, error) {
 		out = append(out, parse(n, append([]byte(nil), sc.Bytes()...)).msgs...)
 		n++
 	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -344,6 +347,9 @@ func scanHead(path string, maxLines int, fn func(raw []byte)) {
 	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for i := 0; i < maxLines && sc.Scan(); i++ {
 		fn(sc.Bytes())
+	}
+	if sc.Err() != nil {
+		return
 	}
 }
 

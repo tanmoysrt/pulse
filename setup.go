@@ -223,23 +223,32 @@ func (m wizModel) View() string {
 
 	switch m.step() {
 	case "saved":
-		b.WriteString(titleStyle.Render("Use saved setup?") + "\n\n")
+		b.WriteString(titleStyle.Render("Use saved setup?"))
+		b.WriteString("\n\n")
 		b.WriteString(m.renderChoices([]choice{{"Start Pulse", "continue with saved setup"}, {"Redo setup", "choose everything again"}}))
 	case "expose":
-		b.WriteString(titleStyle.Render("How should pulse be reachable?") + "\n\n")
+		b.WriteString(titleStyle.Render("How should pulse be reachable?"))
+		b.WriteString("\n\n")
 		b.WriteString(m.renderChoices(exposeChoices))
 	case "password":
-		b.WriteString(titleStyle.Render("Set a login password") + "\n")
-		b.WriteString(dimStyle.Render("Required for the login page; scanning the QR skips it.") + "\n\n")
-		b.WriteString("  " + m.input.View() + "\n")
+		b.WriteString(titleStyle.Render("Set a login password"))
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("Required for the login page; scanning the QR skips it."))
+		b.WriteString("\n\n  ")
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
 	case "notify":
-		b.WriteString(titleStyle.Render("Desktop notifications on this machine?") + "\n\n")
+		b.WriteString(titleStyle.Render("Desktop notifications on this machine?"))
+		b.WriteString("\n\n")
 		b.WriteString(m.renderChoices(notifyChoices))
 	}
 	if m.error != "" {
-		b.WriteString("\n" + m.error + "\n")
+		b.WriteString("\n")
+		b.WriteString(m.error)
+		b.WriteString("\n")
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
 }
 
@@ -247,9 +256,13 @@ func (m wizModel) renderChoices(choices []choice) string {
 	var b strings.Builder
 	for i, c := range choices {
 		if i == m.cursor {
-			b.WriteString(accentStyle.Render("  › "+c.label) + "  " + dimStyle.Render(c.desc) + "\n")
+			b.WriteString(accentStyle.Render("  › " + c.label))
+			b.WriteString("  ")
+			b.WriteString(dimStyle.Render(c.desc))
+			b.WriteString("\n")
 		} else {
-			b.WriteString(dimStyle.Render("    "+c.label+"  "+c.desc) + "\n")
+			b.WriteString(dimStyle.Render("    " + c.label + "  " + c.desc))
+			b.WriteString("\n")
 		}
 	}
 	return b.String()
@@ -259,13 +272,18 @@ func (m wizModel) renderChoices(choices []choice) string {
 // command options are visible without scrolling.
 func renderSummary(urls []string, qr string) string {
 	left := strings.Builder{}
-	left.WriteString(pulseWordmark() + "\n\n")
-	left.WriteString(dimStyle.Render("URLs:") + "\n")
+	left.WriteString(pulseWordmark())
+	left.WriteString("\n\n")
+	left.WriteString(dimStyle.Render("URLs:"))
+	left.WriteString("\n")
 	for _, url := range urls {
-		left.WriteString("- " + accentStyle.Render(url) + "\n")
+		left.WriteString("- ")
+		left.WriteString(accentStyle.Render(url))
+		left.WriteString("\n")
 	}
 	left.WriteString("\n")
-	left.WriteString(dimStyle.Render("Commands:") + "\n")
+	left.WriteString(dimStyle.Render("Commands:"))
+	left.WriteString("\n")
 	left.WriteString("- pulse claude\n- pulse opencode\n- pulse codex\n- pulse ls\n- pulse attach <id>\n- pulse version\n\n")
 	left.WriteString(dimStyle.Render("Ctrl-C quits"))
 
