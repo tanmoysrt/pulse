@@ -1,14 +1,13 @@
 <template>
   <Teleport to="body">
-    <Transition name="sheet" appear @after-leave="$emit('close')">
-      <div v-if="show" class="sheet-backdrop" @click.self="close">
-        <div class="settings-sheet" role="dialog" aria-label="Settings">
-          <div class="sheet-head">
-            <h3>Settings</h3>
-            <button class="icon-btn" aria-label="Close" @click="close"><Icon name="x" :size="18" /></button>
-          </div>
+    <div class="sheet-backdrop" @click.self="$emit('close')">
+      <div class="settings-sheet" role="dialog" aria-label="Settings">
+        <div class="sheet-head">
+          <h3>Settings</h3>
+          <button class="icon-btn" aria-label="Close" @click="$emit('close')"><Icon name="x" :size="18" /></button>
+        </div>
 
-          <div class="sheet-body">
+        <div class="sheet-body">
             <div class="set-row">
               <div class="set-row-main">
                 <div class="set-row-title">Push notifications</div>
@@ -33,11 +32,10 @@
               <div v-else class="skeleton skeleton-spark"></div>
             </div>
 
-            <button class="btn btn-ghost btn-block set-logout" @click="doLogout">Log out</button>
-          </div>
+          <button class="btn btn-ghost btn-block set-logout" @click="doLogout">Log out</button>
         </div>
       </div>
-    </Transition>
+    </div>
   </Teleport>
 </template>
 
@@ -52,13 +50,8 @@ defineProps({ pushSupported: Boolean, pushOn: Boolean })
 defineEmits(['close', 'toggle-push'])
 
 const router = useRouter()
-const show = ref(true)
 const samples = ref([])
 let poll = null
-
-// Drive the exit animation ourselves: hide first, then tell the parent to
-// unmount once the leave transition has finished.
-function close() { show.value = false }
 
 const hasStats = computed(() => samples.value.length > 1)
 

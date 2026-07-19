@@ -608,13 +608,8 @@
     }
     .settings-sheet {
       width: 100%; max-width: 420px; height: 100%; background: var(--bg); display: flex; flex-direction: column;
-      box-shadow: var(--shadow-lg); will-change: transform;
+      box-shadow: var(--shadow-lg);
     }
-    /* Quick, symmetric open/close (same timing both ways) */
-    .sheet-enter-active, .sheet-leave-active { transition: opacity 0.16s ease; }
-    .sheet-enter-from, .sheet-leave-to { opacity: 0; }
-    .sheet-enter-active .settings-sheet, .sheet-leave-active .settings-sheet { transition: transform 0.16s ease; }
-    .sheet-enter-from .settings-sheet, .sheet-leave-to .settings-sheet { transform: translateX(100%); }
     .sheet-head {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 16px 18px; padding-top: calc(16px + env(safe-area-inset-top)); border-bottom: 1px solid var(--border);
