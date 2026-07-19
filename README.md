@@ -49,11 +49,9 @@ Set `PULSE_DEBUG=1` to log requests.
 
 ## How it works
 
-The daemon runs each session in a detached tmux, tails its transcript, and
-streams it to the browser over SSE. It never touches your global agent config.
-History is read from each tool's own store (`~/.claude`, `~/.codex`, and
-OpenCode's SQLite database). The UI is a Vue app compiled into a single
-self-contained `frontend/dist/index.html` that the binary embeds.
+Each session runs in a detached tmux, and Pulse streams its transcript to the
+browser. It reads history from each tool's own store and never touches your
+global agent config.
 
 ## Build from source
 
