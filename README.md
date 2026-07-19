@@ -8,15 +8,30 @@ and [OpenCode](https://opencode.ai) session on your machine — browse past
 transcripts, start or resume a chat, and watch it live: send prompts, approve
 tools, switch models, get pinged when it needs you.
 
-```bash
-(cd frontend && npm install && npm run build)   # build the UI
-go build -o pulse .
+## Install
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/tanmoysrt/pulse/master/install.sh | sh
+```
+
+Downloads the right binary for your machine (macOS or Linux, amd64 or arm64)
+into `/usr/bin/pulse`. Run it again any time to update — it asks first.
+
+```bash
 pulse            # guided setup, then prints the URL + QR (scan it on mobile)
 pulse claude     # spawn a session from a terminal and attach; args pass through
 ```
 
 Needs `tmux`, the agent CLIs you use, and `sqlite3` for OpenCode history.
+
+<details>
+<summary>Build from source</summary>
+
+```bash
+make prod        # builds the UI + stripped binaries for every platform in dist/
+```
+
+</details>
 
 On an interactive terminal `pulse` walks you through how it should be reachable
 (LAN or a public tunnel), a login password (random if you leave it blank), and

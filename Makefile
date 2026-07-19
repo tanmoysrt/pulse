@@ -1,9 +1,10 @@
-BINARY   := pulse
-DIST     := dist
-FRONTEND := frontend
-GOOS     ?= linux
-LDFLAGS  := -s -w
-GOFLAGS  := -trimpath
+BINARY    := pulse
+DIST      := dist
+FRONTEND  := frontend
+VERSION   ?= dev
+LDFLAGS   := -s -w -X main.version=$(VERSION)
+GOFLAGS   := -trimpath
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
 .PHONY: build prod frontend clean
 
@@ -15,12 +16,15 @@ build:
 frontend:
 	cd $(FRONTEND) && npm install && npm run build
 
-# Optimized, stripped, static builds for release (amd64 + arm64), real UI baked in.
-# -s -w drops the symbol table & DWARF; -trimpath removes local paths;
-# CGO_ENABLED=0 makes a fully static binary; -tags prod embeds frontend/dist.
+# Optimized, stripped, static release builds with the real UI baked in, one per
+# platform. -s -w drops the symbol table & DWARF; -trimpath removes local paths;
+# CGO_ENABLED=0 makes fully static binaries; -tags prod embeds frontend/dist.
 prod: clean frontend
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=amd64 go build -tags prod $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-$(GOOS)-amd64 .
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=arm64 go build -tags prod $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-$(GOOS)-arm64 .
+	@for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		echo "building $(BINARY)-$$os-$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -tags prod $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-$$os-$$arch .; \
+	done
 	@ls -lh $(DIST)
 
 clean:

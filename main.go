@@ -22,10 +22,17 @@ var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": tru
 
 const defaultPort = 4444
 
+// version is stamped at build time via -ldflags "-X main.version=..."; "dev"
+// for a plain `go build`.
+var version = "dev"
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "version", "--version", "-v":
+			fmt.Println(version)
+			return
 		case "ls":
 			runList()
 			return

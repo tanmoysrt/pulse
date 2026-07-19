@@ -1,0 +1,38 @@
+name: Release
+
+# Manually triggered from the Actions tab. Enter a version like v0.1.0 and it
+# builds every platform binary, tags the commit, and publishes a GitHub release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build release binaries
+        run: make prod VERSION="${{ inputs.version }}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" dist/pulse-* \
+            --title "${{ inputs.version }}" \
+            --generate-notes
