@@ -13,6 +13,11 @@ Pulse makes it simple to run [Claude Code](https://claude.com/claude-code),
 phone. Use the mobile UI to browse transcripts, start or resume chats, send
 prompts, approve tools, switch models, and get notified when an agent needs you.
 
+
+<img src=".github/assets/pulse-mobile-preview.png" alt="Pulse Mobile Preview">
+<img src=".github/assets/pulse-terminal-preview.png" alt="Pulse Terminal Preview">
+
+
 ## Key Features
 
 - Control Claude Code, Codex, and OpenCode from one mobile UI.
