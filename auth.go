@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const authCookie = "pulse_token"
@@ -154,7 +155,7 @@ func (d *Daemon) apiLogin(c echo.Context) error {
 	if err := c.Bind(&in); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "bad request"})
 	}
-	if d.password == "" || subtle.ConstantTimeCompare([]byte(in.Password), []byte(d.password)) != 1 {
+	if d.passwordHash == "" || bcrypt.CompareHashAndPassword([]byte(d.passwordHash), []byte(in.Password)) != nil {
 		d.logins.fail(ip)
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "wrong password"})
 	}

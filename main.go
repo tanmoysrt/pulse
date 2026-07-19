@@ -152,12 +152,21 @@ func runDaemon(o opts) {
 	if o.local {
 		bindHost = "127.0.0.1"
 	}
-	token, password := "", ""
+	token, passwordHash := "", ""
 	if !o.noAuth {
 		token = randomToken()
-		password = o.password
-		if password == "" {
-			password = randomPassword()
+		passwordHash = o.passwordHash
+		if passwordHash == "" {
+			password := o.password
+			if password == "" {
+				password = randomPassword()
+			}
+			var err error
+			passwordHash, err = hashPassword(password)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "pulse: could not secure password:", err)
+				return
+			}
 		}
 	}
 
@@ -166,7 +175,10 @@ func runDaemon(o opts) {
 		pref = o.port
 	}
 	ln, port := listen(bindHost, pref)
-	d := newDaemon(token, password, o.localNotify, port)
+	d := newDaemon(token, passwordHash, o.localNotify, port)
+	if !o.noAuth {
+		writeSetup(setupRecord{Tunnel: o.tunnel, Port: port, Notify: o.localNotify, PasswordHash: passwordHash})
+	}
 	d.reconcile()
 	go d.stats.collect()
 	startServer(d, ln)
@@ -299,10 +311,11 @@ func freePort(host string) (net.Listener, int) {
 // opts holds daemon startup choices. The *Set fields record whether a flag fixed
 // the value, so the wizard only prompts for what the user left open.
 type opts struct {
-	local, noAuth, tunnel, localNotify bool
-	password                           string
-	port                               int
-	tunnelSet, notifySet, passwordSet  bool
+	local, noAuth, tunnel, localNotify         bool
+	password                                   string
+	port                                       int
+	tunnelSet, notifySet, passwordSet, portSet bool
+	passwordHash                               string
 }
 
 // parseArgs strips pulse's own flags; the first remaining positional (if any)
@@ -331,6 +344,7 @@ func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 			if i+1 < len(argv) {
 				i++
 				o.port, _ = strconv.Atoi(argv[i])
+				o.portSet = true
 			}
 		default:
 			rest = append(rest, a)

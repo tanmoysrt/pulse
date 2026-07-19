@@ -21,29 +21,29 @@ import (
 
 // Daemon owns every live Session and serves the UI plus cross-tool history.
 type Daemon struct {
-	mu          sync.Mutex
-	sessions    map[string]*Session
-	seq         int
-	token       string
-	password    string
-	localNotify bool
-	logins      *loginLimiter
-	stats       *statsRing
-	vapid       *vapidKey
-	pushSubs    []pushSub
-	port        int
+	mu           sync.Mutex
+	sessions     map[string]*Session
+	seq          int
+	token        string
+	passwordHash string
+	localNotify  bool
+	logins       *loginLimiter
+	stats        *statsRing
+	vapid        *vapidKey
+	pushSubs     []pushSub
+	port         int
 }
 
-func newDaemon(token, password string, localNotify bool, port int) *Daemon {
+func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
 	return &Daemon{
-		sessions:    map[string]*Session{},
-		token:       token,
-		password:    password,
-		localNotify: localNotify,
-		logins:      newLoginLimiter(),
-		stats:       newStatsRing(),
-		port:        port,
-		vapid:       loadOrCreateVapid(),
+		sessions:     map[string]*Session{},
+		token:        token,
+		passwordHash: passwordHash,
+		localNotify:  localNotify,
+		logins:       newLoginLimiter(),
+		stats:        newStatsRing(),
+		port:         port,
+		vapid:        loadOrCreateVapid(),
 	}
 }
 
