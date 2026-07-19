@@ -7,7 +7,7 @@
       <span class="title">{{ title || 'Pulse' }}</span>
       <span v-if="!readonly && status === 'connecting'" class="status-badge">Connecting</span>
       <button v-if="resumable" class="resume-btn" @click="$emit('resume')">
-        <Icon name="rotate-cw" :size="13" />
+        <Icon name="play" :size="14" />
         Resume
       </button>
     </div>

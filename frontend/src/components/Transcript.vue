@@ -37,11 +37,16 @@ const keyOf = (m) => m.line + ':' + m.kind + ':' + m.name
 // survive the virtualizer unmounting and remounting a message.
 provide('openStore', reactive({}))
 
+// Only ask for older messages on a genuine upward scroll near the top; the
+// initial scroll-to-bottom moves down, so it never triggers pagination.
+let lastTop = 0
 function onScroll() {
   const el = vlist.value?.viewport
+  const top = el ? el.scrollTop : 0
   atBottom.value = vlist.value ? vlist.value.nearBottom() : true
-  emit('scrolled', (el?.scrollTop || 0) > 4)
-  if (el && el.scrollTop < 400) emit('reachTop')
+  emit('scrolled', top > 4)
+  if (el && top < 400 && top < lastTop) emit('reachTop')
+  lastTop = top
 }
 function toBottom() { vlist.value?.scrollToBottom() }
 // Sticking to the bottom on new messages is handled by VirtualList; this only

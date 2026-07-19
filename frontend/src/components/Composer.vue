@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import Selector from './Selector.vue'
 import Icon from './Icon.vue'
 import { agentLabel } from '../constants'
@@ -69,6 +69,11 @@ const modeLabel = computed(() => (props.modes.find((m) => m.id === props.mode) |
 const ready = computed(() => attachments.value.filter((a) => a.status === 'done'))
 const uploading = computed(() => attachments.value.some((a) => a.status === 'uploading'))
 const canSend = computed(() => !props.disabled && !sending.value && !uploading.value && (!!text.value.trim() || ready.value.length > 0))
+
+// Once the session is busy the send was accepted, so clear the in-flight guard
+// even if its send callback was missed — otherwise the button can stay stuck
+// disabled with a message still typed.
+watch(() => props.busy, (b) => { if (b) sending.value = false })
 
 function autogrow() {
   const el = input.value

@@ -103,15 +103,20 @@ function setRow(key, el) { if (el) rowEls.set(key, el); else rowEls.delete(key) 
 
 let raf = 0
 const schedule = () => { if (!raf) raf = requestAnimationFrame(measure) }
-function measure() {
-  raf = 0
-  const el = viewport.value
-  if (!el) return
+// Record the heights of every mounted row; returns whether any changed.
+function measureRows() {
   let changed = false
   for (const [key, node] of rowEls) {
     const ht = node.offsetHeight
     if (ht && sizes.get(key) !== ht) { record(key, ht); changed = true }
   }
+  return changed
+}
+function measure() {
+  raf = 0
+  const el = viewport.value
+  if (!el) return
+  const changed = measureRows()
   if (stick) {
     rebuild()
     nextTick(() => { const v = viewport.value; if (v) v.scrollTop = v.scrollHeight })
@@ -159,6 +164,9 @@ watch(() => props.items.length, (n, old) => {
     }
     rebuild()
     nextTick(() => {
+      // Measure the just-mounted rows before restoring, so the anchor lands on
+      // real heights instead of estimates and doesn't get corrected (a "bounce").
+      measureRows(); rebuild()
       const idx = props.items.findIndex((it) => props.itemKey(it) === aKey)
       if (idx >= 0) { el.scrollTop = prefix.value[idx] - aOffset; scrollTop.value = el.scrollTop }
       schedule()
