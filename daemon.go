@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -376,7 +377,17 @@ func startServer(d *Daemon, ln net.Listener) {
 	hk.POST("/permission", d.withSession((*Session).hookPermission))
 	hk.POST("/stop", d.withSession((*Session).hookStop))
 
-	e.GET("/", func(c echo.Context) error { return c.HTMLBlob(http.StatusOK, indexHTML) })
+	// The bundle changes every build, so revalidate (no-cache + ETag) rather
+	// than cache blindly: unchanged fetches get a bodyless 304, new builds load.
+	indexETag := fmt.Sprintf(`"%x"`, sha256.Sum256(indexHTML))
+	e.GET("/", func(c echo.Context) error {
+		c.Response().Header().Set("Cache-Control", "no-cache")
+		c.Response().Header().Set("ETag", indexETag)
+		if c.Request().Header.Get("If-None-Match") == indexETag {
+			return c.NoContent(http.StatusNotModified)
+		}
+		return c.HTMLBlob(http.StatusOK, indexHTML)
+	})
 	e.GET("/sw.js", func(c echo.Context) error { return c.Blob(http.StatusOK, "application/javascript", swJS) })
 	e.GET("/manifest.webmanifest", func(c echo.Context) error { return c.Blob(http.StatusOK, "application/manifest+json", manifestJSON) })
 
