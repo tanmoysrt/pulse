@@ -9,6 +9,76 @@ INSTALL_DIR="/usr/bin"
 
 fail() { echo "pulse: $1" >&2; exit 1; }
 
+as_root() {
+	if [ "$(id -u)" -eq 0 ]; then
+		"$@"
+		return
+	fi
+	command -v sudo >/dev/null 2>&1 || fail "need sudo to install required tools"
+	sudo "$@"
+}
+
+install_linux_tools() {
+	missing_tmux=0
+	missing_sqlite=0
+	command -v tmux >/dev/null 2>&1 || missing_tmux=1
+	command -v sqlite3 >/dev/null 2>&1 || missing_sqlite=1
+	[ "$missing_tmux" -eq 0 ] && [ "$missing_sqlite" -eq 0 ] && return
+
+	if command -v apt-get >/dev/null 2>&1; then
+		packages=""
+		[ "$missing_tmux" -eq 0 ] || packages="$packages tmux"
+		[ "$missing_sqlite" -eq 0 ] || packages="$packages sqlite3"
+		as_root apt-get update
+		as_root apt-get install -y $packages
+	elif command -v apk >/dev/null 2>&1; then
+		packages=""
+		[ "$missing_tmux" -eq 0 ] || packages="$packages tmux"
+		[ "$missing_sqlite" -eq 0 ] || packages="$packages sqlite"
+		as_root apk add $packages
+	elif command -v dnf >/dev/null 2>&1; then
+		packages=""
+		[ "$missing_tmux" -eq 0 ] || packages="$packages tmux"
+		[ "$missing_sqlite" -eq 0 ] || packages="$packages sqlite"
+		as_root dnf install -y $packages
+	elif command -v yum >/dev/null 2>&1; then
+		packages=""
+		[ "$missing_tmux" -eq 0 ] || packages="$packages tmux"
+		[ "$missing_sqlite" -eq 0 ] || packages="$packages sqlite"
+		as_root yum install -y $packages
+	elif command -v pacman >/dev/null 2>&1; then
+		packages=""
+		[ "$missing_tmux" -eq 0 ] || packages="$packages tmux"
+		[ "$missing_sqlite" -eq 0 ] || packages="$packages sqlite"
+		as_root pacman -Sy --noconfirm $packages
+	else
+		fail "unsupported Linux package manager; install tmux and sqlite3, then run this again"
+	fi
+}
+
+install_macos_tools() {
+	packages=""
+	command -v tmux >/dev/null 2>&1 || packages="$packages tmux"
+	command -v sqlite3 >/dev/null 2>&1 || packages="$packages sqlite"
+	[ -n "$packages" ] || return
+
+	command -v brew >/dev/null 2>&1 || fail "Homebrew is required to install tmux and sqlite3 (https://brew.sh)"
+	brew install $packages
+	if command -v sqlite3 >/dev/null 2>&1; then
+		return
+	fi
+	brew link --overwrite --force sqlite
+}
+
+install_required_tools() {
+	case "$os" in
+		linux) install_linux_tools ;;
+		darwin) install_macos_tools ;;
+	esac
+	command -v tmux >/dev/null 2>&1 || fail "tmux installation failed"
+	command -v sqlite3 >/dev/null 2>&1 || fail "sqlite3 installation failed"
+}
+
 os=$(uname -s)
 case "$os" in
 	Linux)  os="linux" ;;
@@ -45,6 +115,8 @@ if command -v "$BIN" >/dev/null 2>&1; then
 		*) echo "pulse: leaving the existing install untouched."; exit 0 ;;
 	esac
 fi
+
+install_required_tools
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT

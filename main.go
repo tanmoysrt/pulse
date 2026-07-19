@@ -61,7 +61,20 @@ func main() {
 		runClient(agent, agentArgs)
 		return
 	}
+	if err := checkRequirements(); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse:", err)
+		os.Exit(1)
+	}
 	runDaemon(o)
+}
+
+func checkRequirements() error {
+	for _, command := range []string{"tmux", "sqlite3"} {
+		if _, err := exec.LookPath(command); err != nil {
+			return fmt.Errorf("%s is required; install it and run pulse again", command)
+		}
+	}
+	return nil
 }
 
 // runUpdate streams the official installer to sh. The installer reads its
