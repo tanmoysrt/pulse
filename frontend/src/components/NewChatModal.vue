@@ -17,12 +17,12 @@
       </div>
       <div class="dir-list">
         <div v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)"><Icon name="folder" :size="15" />{{ name }}</div>
-        <div v-if="!dirs.length" class="dir-empty">No subfolders — Start uses this directory</div>
+        <div v-if="!dirs.length" class="dir-empty">No subfolders. Start uses this directory.</div>
       </div>
 
       <div class="modal-actions">
-        <button class="modal-start" :disabled="!path || starting" @click="start">{{ starting ? 'Starting…' : 'Start' }}</button>
-        <button class="modal-cancel" @click="$emit('close')">Cancel</button>
+        <button class="btn btn-primary" :disabled="!path || starting" @click="start">{{ starting ? 'Starting…' : 'Start' }}</button>
+        <button class="btn btn-ghost" @click="$emit('close')">Cancel</button>
       </div>
     </div>
   </div>

@@ -359,6 +359,8 @@ func startServer(d *Daemon, ln net.Listener) {
 	}
 
 	e.POST("/api/login", d.apiLogin)
+	e.POST("/api/logout", d.apiLogout)
+	e.GET("/api/me", d.apiMe)
 	e.GET("/api/sessions", d.apiList)
 	e.POST("/api/sessions", d.apiSpawn)
 	e.GET("/api/history", d.apiHistory)

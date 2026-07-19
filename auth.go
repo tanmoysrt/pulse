@@ -15,9 +15,9 @@ import (
 const authCookie = "pulse_token"
 
 // Paths served without auth: the SPA shell (so it can render the login view),
-// its static companions, and the login endpoint itself.
+// its static companions, and the login/logout endpoints.
 var publicPaths = map[string]bool{
-	"/": true, "/sw.js": true, "/manifest.webmanifest": true, "/api/login": true,
+	"/": true, "/sw.js": true, "/manifest.webmanifest": true, "/api/login": true, "/api/logout": true,
 }
 
 // randomToken returns a URL-safe random secret used to gate access to the UI.
@@ -160,5 +160,14 @@ func (d *Daemon) apiLogin(c echo.Context) error {
 	}
 	d.logins.reset(ip)
 	setAuthCookie(c, d.token)
+	return c.NoContent(http.StatusOK)
+}
+
+// apiLogout clears the auth cookie; the browser then falls back to the login page.
+func (d *Daemon) apiLogout(c echo.Context) error {
+	c.SetCookie(&http.Cookie{
+		Name: authCookie, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
 	return c.NoContent(http.StatusOK)
 }

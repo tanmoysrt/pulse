@@ -5,8 +5,8 @@
     <div class="home-head">
       <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
       <div class="home-actions">
-        <button class="round-btn primary" title="New chat" aria-label="New chat" @click="showModal = true">
-          <Icon name="plus" :size="17" />
+        <button v-if="hasAny" class="round-btn" :class="{ on: searchOpen }" title="Search" aria-label="Search" @click="toggleSearch">
+          <Icon name="search" :size="16" />
         </button>
         <button class="round-btn" title="Settings" aria-label="Settings" @click="showSettings = true">
           <Icon name="settings" :size="16" />
@@ -14,11 +14,11 @@
       </div>
     </div>
 
-    <div v-if="hasAny" class="home-search">
-      <Icon name="search" :size="16" />
-      <input v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" @keydown.esc="query = ''" />
+    <div v-if="searchOpen" class="home-search">
+      <Icon name="search" :size="15" />
+      <input ref="searchInput" v-model="query" type="search" placeholder="Search chats" aria-label="Search chats" @keydown.esc="closeSearch" />
       <button v-if="query" class="search-clear" aria-label="Clear search" @click="query = ''">
-        <Icon name="x" :size="14" />
+        <Icon name="x" :size="13" />
       </button>
     </div>
 
@@ -40,7 +40,11 @@
     </VirtualList>
     <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
     <div v-else-if="query" class="home-list home-empty"><h2>No matches</h2><p>Nothing matches “{{ query }}”.</p></div>
-    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Start one with the ＋ button.</p></div>
+    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Tap the button below to start one.</p></div>
+
+    <button class="fab" title="New chat" aria-label="New chat" @click="showModal = true">
+      <Icon name="plus" :size="22" />
+    </button>
 
     <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
     <SettingsSheet v-if="showSettings" :push-supported="pushSup" :push-on="pushOn" @close="showSettings = false" @toggle-push="toggleNotifs" />
@@ -49,7 +53,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
@@ -71,8 +75,17 @@ const showModal = ref(false)
 const showSettings = ref(false)
 const installed = ref([])
 const query = ref('')
+const searchOpen = ref(false)
+const searchInput = ref(null)
 
 const hasAny = computed(() => live.value.length > 0 || history.value.length > 0)
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) nextTick(() => searchInput.value && searchInput.value.focus())
+  else query.value = ''
+}
+function closeSearch() { searchOpen.value = false; query.value = '' }
 
 // Notifications are a daemon-level setting (one browser subscription covers every
 // session), so state lives here and is shared with the settings sheet + first-run

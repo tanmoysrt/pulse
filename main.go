@@ -207,7 +207,7 @@ func promptStopAll(n int) bool {
 	case v := <-ans:
 		return v
 	case <-time.After(60 * time.Second):
-		fmt.Println("\npulse: timed out — leaving sessions running")
+		fmt.Println("\npulse: timed out, leaving sessions running")
 		return false
 	}
 }

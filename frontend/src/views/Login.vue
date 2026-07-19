@@ -10,7 +10,7 @@
           ref="pw" v-model="password" type="password" autocomplete="current-password"
           placeholder="Password" :disabled="locked" aria-label="Password"
         />
-        <button type="submit" :disabled="locked || !password || busy">
+        <button type="submit" class="btn btn-primary btn-block" :disabled="locked || !password || busy">
           {{ busy ? 'Checking…' : 'Unlock' }}
         </button>
       </form>
@@ -45,7 +45,7 @@ function lockFor(secs) {
   locked.value = true
   isErr.value = true
   const tick = () => {
-    msg.value = `Too many attempts — try again in ${fmt(secs)}.`
+    msg.value = `Too many attempts. Try again in ${fmt(secs)}.`
     if (secs <= 0) { clearInterval(timer); locked.value = false; msg.value = ''; nextTick(() => pw.value && pw.value.focus()) }
     secs--
   }

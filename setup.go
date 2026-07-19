@@ -191,7 +191,7 @@ func renderSummary(url, scope, password, qr string) string {
 	if password != "" {
 		b.WriteString("\n  " + dimStyle.Render("Password") + "  " + titleStyle.Render(password) + "\n")
 	}
-	b.WriteString("\n  " + dimStyle.Render("pulse claude — start a session · Ctrl-C — quit") + "\n")
+	b.WriteString("\n  " + dimStyle.Render("pulse claude  starts a session  ·  Ctrl-C  quits") + "\n")
 	return b.String()
 }
 

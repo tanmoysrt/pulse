@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"net/http"
 	"os"
+	"os/user"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +102,18 @@ func (d *Daemon) apiStats(c echo.Context) error {
 		"samples":  d.stats.snapshot(),
 		"interval": int(statsInterval.Seconds()),
 	})
+}
+
+// apiMe reports who the daemon is running as, shown in the settings sheet.
+func (d *Daemon) apiMe(c echo.Context) error {
+	name := ""
+	if u, err := user.Current(); err == nil {
+		name = u.Username
+	}
+	if name == "" {
+		name = os.Getenv("USER")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"user": name})
 }
 
 // readCPU returns cumulative total and idle jiffies from /proc/stat.
