@@ -200,19 +200,25 @@
     .bubble.user pre { background: rgba(255,255,255,0.08); border-color: transparent; }
     .bubble pre code { background: none; border: 0; padding: 0; font-size: 13px; color: inherit; }
 
-    /* Long assistant replies collapse to ~6 lines behind a fade; tap to expand. */
+    /* Long messages (either side) clamp to ~6 lines behind a fade; a tap
+       anywhere on the bubble expands it for good — no collapse control. */
     .bubble-wrap { max-width: 88%; position: relative; }
     .bubble-wrap .bubble { max-width: 100%; }
+    .bubble-wrap.clipped { cursor: pointer; }
     .bubble-wrap.clipped .bubble { max-height: 150px; overflow: hidden; }
     .bubble-wrap.clipped::after {
-      content: ''; position: absolute; left: 0; right: 0; bottom: 26px; height: 56px; pointer-events: none;
-      background: linear-gradient(to bottom, transparent, var(--bg));
+      content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 64px; pointer-events: none;
     }
-    .more-btn {
-      margin-top: 4px; padding: 3px 0; background: none; border: 0; cursor: pointer;
-      font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); transition: color 0.15s;
+    .row.assistant .bubble-wrap.clipped::after { background: linear-gradient(transparent, var(--bg)); }
+    .row.user .bubble-wrap.clipped::after {
+      background: linear-gradient(transparent, var(--ink)); border-radius: 0 0 6px var(--radius-lg);
     }
-    .more-btn:hover { color: var(--ink); }
+    .expand-hint {
+      position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); z-index: 1;
+      display: flex; pointer-events: none;
+    }
+    .row.assistant .expand-hint { color: var(--muted); }
+    .row.user .expand-hint { color: var(--bg); }
 
     /* Thinking */
     .thinking { margin: 0 0 14px; }

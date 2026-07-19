@@ -1,8 +1,8 @@
 <template>
   <div v-if="m.kind === 'text'" class="row" :class="m.role">
-    <div class="bubble-wrap" :class="{ clipped: clip && !open }">
+    <div class="bubble-wrap" :class="{ clipped: clip && !open }" @click="onExpand">
       <div ref="bubbleEl" class="bubble" :class="m.role" v-html="renderText(m.text)"></div>
-      <button v-if="clip" class="more-btn" @click="toggle">{{ open ? 'Show less' : 'Show more' }}</button>
+      <span v-if="clip && !open" class="expand-hint"><Chevron /></span>
     </div>
   </div>
 
@@ -69,13 +69,18 @@ const toolCount = computed(() => {
   return n || props.m.items.length
 })
 
-// Clamp long assistant replies to ~6 lines behind a fade; measured after mount
-// (re-runs when the virtualizer remounts the row) so only overflowing text gets
-// the "Show more" affordance.
+// Clamp long messages (either side) to ~6 lines behind a fade; measured after
+// mount (re-runs when the virtualizer remounts the row) so only overflowing
+// text gets the affordance. A click anywhere on the bubble expands it for good.
 const CLIP_PX = 150
 const bubbleEl = ref(null)
 const clip = ref(false)
 onMounted(() => nextTick(() => {
-  if (props.m.role === 'assistant' && bubbleEl.value) clip.value = bubbleEl.value.scrollHeight > CLIP_PX + 24
+  if (bubbleEl.value) clip.value = bubbleEl.value.scrollHeight > CLIP_PX + 24
 }))
+function onExpand() {
+  if (!clip.value || open.value) return
+  if (store) store[key()] = true
+  else local.value = true
+}
 </script>
