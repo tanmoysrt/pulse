@@ -4,7 +4,19 @@
   </div>
 
   <div v-else-if="m.kind === 'command'" class="cmd-row">
-    <span class="cmd">{{ m.text }}</span>
+    <span class="cmd">{{ commandLabel(m.text) }}</span>
+  </div>
+
+  <div v-else-if="m.kind === 'tool_group'" class="act-group" :class="{ open }">
+    <button class="act-head" @click="toggle">
+      <span class="act-icon tool_use"></span>
+      <span class="act-name">{{ toolCount }} {{ toolCount === 1 ? 'tool call' : 'tool calls' }}</span>
+      <span class="act-sum"></span>
+      <Chevron />
+    </button>
+    <div class="act-group-body">
+      <MessageItem v-for="it in m.items" :key="it.line" :m="it" />
+    </div>
   </div>
 
   <div v-else-if="m.kind === 'thinking'" class="thinking" :class="{ open }">
@@ -32,7 +44,7 @@
 // Expanded/collapsed state lives in a store the parent provides (keyed by
 // message) so it survives the virtualizer recycling this row off-screen.
 import { computed, inject, ref } from 'vue'
-import { renderText, firstLine, toolSummary } from '../lib/format'
+import { renderText, firstLine, toolSummary, commandLabel } from '../lib/format'
 import Chevron from './Chevron.vue'
 
 const props = defineProps({ m: { type: Object, required: true } })
@@ -46,4 +58,11 @@ function toggle() {
 }
 const summary = computed(() =>
   props.m.kind === 'tool_use' ? toolSummary(props.m) : firstLine(props.m.text))
+
+// Count the tool_use calls in a folded run (results are the paired replies, not
+// separate actions), e.g. "3 tool calls".
+const toolCount = computed(() => {
+  const n = props.m.items.filter((i) => i.kind === 'tool_use').length
+  return n || props.m.items.length
+})
 </script>

@@ -1,6 +1,5 @@
-export function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+import MarkdownIt from 'markdown-it'
+
 export function firstLine(text) { return String(text || '').split('\n')[0] }
 export function parseJSON(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
@@ -12,23 +11,10 @@ function pick(o, keys) {
 const SUMMARY_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description']
 export function toolSummary(m) { return pick(parseJSON(m.text) || {}, SUMMARY_KEYS).split('\n')[0] }
 
-// Escapes, then renders a small markdown subset (fenced/inline code, bold).
-export function renderText(text) {
-  const parts = String(text || '').split('```')
-  let html = ''
-  parts.forEach((part, i) => {
-    if (i % 2 === 1) {
-      const body = part.replace(/^[^\n]*\n/, (m) => (m.trim() ? '' : m))
-      html += '<pre class="code mono"><code>' + escapeHtml(body.replace(/\n$/, '')) + '</code></pre>'
-    } else {
-      let seg = escapeHtml(part)
-      seg = seg.replace(/`([^`]+)`/g, '<code>$1</code>')
-      seg = seg.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      html += seg
-    }
-  })
-  return html
-}
+// Full CommonMark for message bubbles. html:false escapes any raw HTML in the
+// text, which keeps v-html safe from injected markup.
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+export function renderText(text) { return md.render(String(text || '')) }
 
 const PERM_ACTIONS = {
   Bash: 'Run command', Read: 'Read file', Edit: 'Edit file', Write: 'Write file',
@@ -79,6 +65,43 @@ export function dateBucket(ms) {
   if (days === 1) return 'Yesterday'
   if (days < 7) return 'Previous 7 days'
   return 'Earlier'
+}
+
+const CMD_LABELS = {
+  clear: 'Context cleared', compact: 'Conversation compacted', init: 'Project initialized',
+  model: 'Model changed', effort: 'Effort changed', resume: 'Session resumed',
+  cost: 'Usage summary', help: 'Help', review: 'Review requested',
+}
+// A slash command surfaces two ways: a short command name ("clear", "/effort
+// high") and a separate stdout blob that can be large. Both look broken crammed
+// into a pill, so keep only a short human label — a friendly name for known
+// commands, otherwise the bare token; never the multi-line body.
+export function commandLabel(text) {
+  const first = firstLine(text).trim()
+  const tok = first.replace(/^\//, '').split(/\s+/)[0].toLowerCase()
+  if (CMD_LABELS[tok]) return CMD_LABELS[tok]
+  if (/^[a-z][a-z-]*$/.test(tok) && first.length <= 24) return '/' + tok
+  return first.length > 72 ? first.slice(0, 72) + '…' : first
+}
+
+export function isToolMsg(m) { return !!m && (m.kind === 'tool_use' || m.kind === 'tool_result') }
+
+// Folds runs of consecutive tool-activity messages into one collapsed group so a
+// long stretch of Reads/Bash/Edits takes a single line instead of many. Lone
+// tool calls are unwrapped back to their plain message.
+export function groupMessages(messages) {
+  const out = []
+  let run = null
+  for (const m of messages) {
+    if (isToolMsg(m)) {
+      if (!run) { run = { kind: 'tool_group', line: m.line, items: [] }; out.push(run) }
+      run.items.push(m)
+    } else {
+      run = null
+      out.push(m)
+    }
+  }
+  return out.map((x) => (x.kind === 'tool_group' && x.items.length === 1 ? x.items[0] : x))
 }
 
 export function isImageType(type) { return /^image\//.test(type || '') }

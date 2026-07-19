@@ -1,5 +1,5 @@
 <template>
-  <VirtualList ref="vlist" tag="main" class="transcript" :items="messages" :item-key="keyOf"
+  <VirtualList ref="vlist" tag="main" class="transcript" :items="rows" :item-key="keyOf"
     :estimate="72" stick-bottom @scroll="onScroll">
     <template #before><slot name="top" /><slot name="empty" /></template>
     <template #default="{ item }"><MessageItem :m="item" /></template>
@@ -17,6 +17,7 @@ import { ref, reactive, computed, provide } from 'vue'
 import MessageItem from './MessageItem.vue'
 import Icon from './Icon.vue'
 import VirtualList from './VirtualList.vue'
+import { groupMessages } from '../lib/format'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -28,6 +29,8 @@ const vlist = ref(null)
 const atBottom = ref(true)
 const showFab = computed(() => !atBottom.value && !props.hideFab)
 
+// Fold consecutive tool calls into one collapsed row before windowing.
+const rows = computed(() => groupMessages(props.messages))
 const keyOf = (m) => m.line + ':' + m.kind + ':' + m.name
 
 // Expanded thinking/tool blocks, kept here (not in the recycled row) so they

@@ -165,7 +165,7 @@
 
     .row { display: flex; margin-bottom: 20px; }
     .row.user { justify-content: flex-end; }
-    .bubble { max-width: 88%; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; line-height: 1.6; }
+    .bubble { max-width: 88%; word-break: break-word; overflow-wrap: anywhere; line-height: 1.6; }
     .bubble.assistant { color: var(--text); }
     .bubble.user { background: var(--ink); color: var(--bg); padding: 11px 15px; border-radius: var(--radius-lg); border-bottom-right-radius: 6px; }
     .bubble.user.pending { opacity: 0.5; }
@@ -175,11 +175,30 @@
       width: 56px; height: 56px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.14);
       display: flex; align-items: center; justify-content: center; color: inherit; font-size: 11px; text-align: center; padding: 4px; overflow: hidden;
     }
+    /* Markdown blocks (rendered by markdown-it). Collapse outer margins so a
+       bubble hugs its content. */
+    .bubble > :first-child { margin-top: 0; }
+    .bubble > :last-child { margin-bottom: 0; }
+    .bubble p { margin: 0 0 10px; }
+    .bubble ul, .bubble ol { margin: 8px 0; padding-left: 22px; }
+    .bubble li { margin: 3px 0; }
+    .bubble li > p { margin: 0; }
+    .bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 16px 0 8px; line-height: 1.3; color: var(--ink); font-weight: 600; }
+    .bubble h1 { font-size: 1.35em; }
+    .bubble h2 { font-size: 1.2em; }
+    .bubble h3 { font-size: 1.08em; }
+    .bubble h4 { font-size: 1em; }
+    .bubble.user h1, .bubble.user h2, .bubble.user h3, .bubble.user h4 { color: inherit; }
+    .bubble a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    .bubble blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--border); color: var(--muted); }
+    .bubble hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+    .bubble table { border-collapse: collapse; margin: 8px 0; display: block; overflow-x: auto; }
+    .bubble th, .bubble td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
     .bubble code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); border: 1px solid var(--border); padding: 2px 5px; border-radius: 5px; color: var(--ink); }
     .bubble.user code { background: rgba(255,255,255,0.14); border-color: transparent; color: inherit; }
-    .bubble .code { white-space: pre; overflow-x: auto; margin: 8px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
-    .bubble.user .code { background: rgba(255,255,255,0.08); border-color: transparent; }
-    .bubble .code code { background: none; border: 0; padding: 0; font-size: 13px; color: inherit; }
+    .bubble pre { white-space: pre; overflow-x: auto; margin: 8px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+    .bubble.user pre { background: rgba(255,255,255,0.08); border-color: transparent; }
+    .bubble pre code { background: none; border: 0; padding: 0; font-size: 13px; color: inherit; }
 
     /* Thinking */
     .thinking { margin: 0 0 14px; }
@@ -200,6 +219,14 @@
     .act-name { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; color: inherit; flex: none; }
     .act-sum { flex: 1; color: inherit; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .act-body { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; padding: 6px 0 0 14px; color: var(--muted); font-size: 14px; }
+
+    /* A folded run of consecutive tool calls (see groupMessages): one line that
+       expands to the individual, still-collapsible calls. */
+    .act-group { margin: 0 0 8px; }
+    .act-group-body { display: none; margin-top: 2px; padding-left: 14px; border-left: 1px solid var(--border); }
+    .act-group.open > .act-group-body { display: block; }
+    .act-group.open > .act-head .chev { transform: rotate(180deg); }
+    .act-group-body .act:last-child { margin-bottom: 0; }
 
     .working { display: flex; align-items: center; gap: 10px; margin: 6px 0 20px; color: var(--muted); font-size: 14px; }
     .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); animation: pulse 1.4s infinite; }

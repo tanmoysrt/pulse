@@ -1,5 +1,7 @@
 <template>
   <div class="home">
+    <div v-if="!loaded" class="boot-loader"><div class="pulse-rings"><span></span><span></span><span></span></div></div>
+
     <div class="home-head">
       <div class="home-brand"><span class="logo">P</span><span>Pulse</span></div>
       <div class="home-actions">
