@@ -26,14 +26,16 @@
       <template #default="{ item }">
         <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
         <button v-else class="card" @click="open(item.s, item.live)">
-          <div class="agent-badge" :class="'agent-' + item.s.tool"><AgentLogo :tool="item.s.tool" /></div>
+          <div class="agent-badge" :class="'agent-' + item.s.tool">
+            <AgentLogo :tool="item.s.tool" />
+            <span v-if="item.live" class="live-corner" title="Live"></span>
+          </div>
           <div class="card-main">
             <div class="card-title">{{ cardTitle(item.s) }}</div>
             <div class="card-sub">{{ item.s.dir }}</div>
           </div>
           <div class="card-meta">
-            <span v-if="item.live" class="live-dot">live</span>
-            <span v-else class="card-time">{{ timeAgo(item.s.updated) }}</span>
+            <span class="card-time">{{ timeAgo(item.s.updated) }}</span>
           </div>
         </button>
       </template>

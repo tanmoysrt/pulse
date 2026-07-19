@@ -36,6 +36,7 @@ type Session struct {
 	id               string
 	dir              string
 	createdAt        time.Time
+	lastActive       time.Time
 	ctx              context.Context
 	cancel           context.CancelFunc
 	cleanup          func()
@@ -73,6 +74,7 @@ func newSession(d *Daemon, id, tmuxSession, agent, dir string) *Session {
 		id:          id,
 		dir:         dir,
 		createdAt:   time.Now(),
+		lastActive:  time.Now(),
 		ctx:         ctx,
 		cancel:      cancel,
 		cleanup:     func() {},
@@ -146,6 +148,7 @@ func (s *Session) setStatus(status string) {
 func (s *Session) appendMessage(m Message) {
 	s.mu.Lock()
 	s.messages = append(s.messages, m)
+	s.lastActive = time.Now()
 	s.broadcast(messageEvent(m))
 	s.mu.Unlock()
 }
@@ -245,6 +248,9 @@ func (s *Session) onTranscriptLine(lineNo int, raw []byte) {
 		}
 		s.messages = append(s.messages, m)
 		s.broadcast(messageEvent(m))
+	}
+	if len(p.msgs) > 0 {
+		s.lastActive = time.Now()
 	}
 	s.mu.Unlock()
 }

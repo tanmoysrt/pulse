@@ -253,7 +253,7 @@ func (d *Daemon) apiList(c echo.Context) error {
 		s.mu.Lock()
 		live = append(live, listItem{
 			ID: s.id, Tool: s.agent, Dir: s.dir, Title: s.title,
-			Status: s.status, Live: true, Updated: s.createdAt.UnixMilli(),
+			Status: s.status, Live: true, Updated: s.lastActive.UnixMilli(),
 		})
 		s.mu.Unlock()
 	}
