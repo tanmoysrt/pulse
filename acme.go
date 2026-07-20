@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -26,7 +27,23 @@ import (
 	"github.com/go-acme/lego/v4/registration"
 )
 
-func acmeDir() string { return filepath.Join(filepath.Dir(statePath()), "certs") }
+func acmeDir() string { return filepath.Join(configHomeDir(), "pulse", "certs") }
+
+// configHomeDir mirrors os.UserConfigDir(), except that under sudo (SUDO_UID
+// set) it resolves the invoking user's config dir instead of root's — sudo
+// resets $HOME to root's home by default, which would otherwise put
+// certificates somewhere the unprivileged daemon never looks afterward.
+func configHomeDir() string {
+	if uidStr := os.Getenv("SUDO_UID"); uidStr != "" {
+		if u, err := user.LookupId(uidStr); err == nil && u.HomeDir != "" {
+			return filepath.Join(u.HomeDir, ".config")
+		}
+	}
+	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+		return dir
+	}
+	return os.TempDir()
+}
 
 func certName(target string) string {
 	r := strings.NewReplacer(":", "_", "/", "_", "*", "_")
@@ -330,7 +347,10 @@ func ensureRoot() {
 
 // restoreOwnership hands files written while elevated back to the user who
 // ran sudo (sudo sets SUDO_UID/SUDO_GID), so the unprivileged `pulse` daemon
-// can read its own certificates without needing root at every startup.
+// can read its own certificates without needing root at every startup. It
+// walks from acmeDir's parent, not just acmeDir itself, in case this is the
+// very first time anything was written under the pulse config dir — root
+// would otherwise leave that whole directory unreadable to its owner.
 func restoreOwnership() {
 	uid, err := strconv.Atoi(os.Getenv("SUDO_UID"))
 	if err != nil {
@@ -340,7 +360,7 @@ func restoreOwnership() {
 	if err != nil {
 		return
 	}
-	filepath.Walk(acmeDir(), func(path string, _ os.FileInfo, err error) error {
+	filepath.Walk(filepath.Dir(acmeDir()), func(path string, _ os.FileInfo, err error) error {
 		if err == nil {
 			os.Chown(path, uid, gid)
 		}

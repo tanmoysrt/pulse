@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -167,6 +168,19 @@ func TestCertNameSanitizesTarget(t *testing.T) {
 		if got := certName(in); got != want {
 			t.Fatalf("certName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestConfigHomeDirUsesInvokingUserWhenElevated(t *testing.T) {
+	root, err := user.LookupId("0")
+	if err != nil || root.HomeDir == "" {
+		t.Skip("no uid 0 on this system")
+	}
+	t.Setenv("SUDO_UID", "0")
+
+	want := filepath.Join(root.HomeDir, ".config")
+	if got := configHomeDir(); got != want {
+		t.Fatalf("configHomeDir() = %q, want %q (not root's own $HOME under sudo)", got, want)
 	}
 }
 
