@@ -31,8 +31,15 @@ export async function login(password) {
 }
 
 export const getStats = () => getJSON('/api/stats')
-export const getVersion = () => getJSON('/api/version')
+export const getVersion = (fresh) => getJSON('/api/version' + (fresh ? '?fresh=1' : ''))
 export const logout = () => post('/api/logout')
+
+export async function requestUpdate() {
+  const r = await post('/api/update')
+  const d = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(d.error || 'update failed')
+  return d
+}
 
 export const listSessions = () => getJSON('/api/sessions')
 // readHistory returns a page ending at `before` (exclusive), or the latest page.

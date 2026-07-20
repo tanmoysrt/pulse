@@ -38,6 +38,10 @@ type Daemon struct {
 	awake            *sleepInhibitor
 	urls             []string // reachable URLs, resolved once at startup (includes tunnel URL if any)
 	primary          string   // the one urls entry the QR/status view leads with
+	tunnel           bool     // set once at startup; a self-update can't reproduce a rotated tunnel URL
+	exePath          string   // resolved once at startup — see runDaemon's comment on why it's cached
+	restart          chan struct{}
+	restartOnce      sync.Once
 }
 
 func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
@@ -52,7 +56,15 @@ func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
 		stats:            newStatsRing(),
 		port:             port,
 		vapid:            loadOrCreateVapid(),
+		restart:          make(chan struct{}),
 	}
+}
+
+// requestRestart signals runDaemon's shutdown-select to persist session
+// state and re-exec detached — used by both the "bg" stdin command and a
+// completed self-update. Safe to call more than once or from either path.
+func (d *Daemon) requestRestart() {
+	d.restartOnce.Do(func() { close(d.restart) })
 }
 
 // currentBootstrap returns the active single-use QR/setup-link token.
@@ -445,6 +457,7 @@ func startServer(d *Daemon, ln net.Listener) *echo.Echo {
 	e.GET("/api/dirs", d.apiDirs)
 	e.GET("/api/stats", d.apiStats)
 	e.GET("/api/version", d.apiVersion)
+	e.POST("/api/update", d.apiUpdate)
 	e.GET("/api/status", d.apiStatus)
 	e.GET("/api/push/key", d.apiPushKey)
 	e.POST("/api/push/subscribe", d.apiPushSubscribe)

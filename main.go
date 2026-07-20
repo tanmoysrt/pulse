@@ -217,6 +217,15 @@ func runClient(agent string, agentArgs []string) {
 }
 
 func runDaemon(o opts) {
+	// Captured once, before this process could ever rename its own binary
+	// aside (see replaceBinary) — os.Executable() re-derived after that point
+	// would resolve to the renamed old file instead of the new one.
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not locate own executable:", err)
+		return
+	}
+
 	resumeToken := os.Getenv(daemonResumeTokenEnv)
 	resuming := os.Getenv(daemonResumeEnv) == "1" && resumeToken != ""
 
@@ -267,6 +276,8 @@ func runDaemon(o opts) {
 
 	urls, primary := resolveURLs(o, port)
 	d.urls, d.primary = urls, primary // exposed via /api/status so a later `pulse` can reprint this exact banner
+	d.tunnel = o.tunnel
+	d.exePath = exePath
 
 	e := startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
@@ -276,24 +287,24 @@ func runDaemon(o opts) {
 	fmt.Println(dimStyle.Render(`type "bg" + Enter to move to the background`))
 	go watchBootstrapRotation(d, urls, primary, shown)
 
-	bg := make(chan struct{})
-	go watchDetach(bg)
+	go watchDetach(d)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case <-ctx.Done():
 		stop() // restore default handler so a second Ctrl-C force-quits
 		handleShutdown(d)
-	case <-bg:
+	case <-d.restart:
 		stop()
-		runDetach(d, o, port, token, passwordHash, e)
+		runDetach(d, o, port, token, passwordHash, exePath, e)
 	}
 }
 
-// watchDetach reads lines from stdin and signals bg when it sees "bg". Only
-// meaningful with a real terminal attached; a closed/non-tty stdin just
-// makes the read loop exit without ever firing.
-func watchDetach(bg chan<- struct{}) {
+// watchDetach reads lines from stdin and requests a restart when it sees
+// "bg" — the same trigger a completed self-update uses. Only meaningful with
+// a real terminal attached; a closed/non-tty stdin just makes the read loop
+// exit without ever firing.
+func watchDetach(d *Daemon) {
 	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
 		return
 	}
@@ -301,7 +312,7 @@ func watchDetach(bg chan<- struct{}) {
 	for {
 		line, err := r.ReadString('\n')
 		if strings.ToLower(strings.TrimSpace(line)) == "bg" {
-			close(bg)
+			d.requestRestart()
 			return
 		}
 		if err != nil {
@@ -314,18 +325,16 @@ func watchDetach(bg chan<- struct{}) {
 // daemon as a fully detached process (new session, output to a log file) so
 // it survives the terminal closing. The port is freed before the child binds
 // so it deterministically reclaims the same one — no fd-passing needed.
-func runDetach(d *Daemon, o opts, port int, token, passwordHash string, e *echo.Echo) {
+// exePath is runDaemon's startup-captured path, not a fresh os.Executable()
+// call — see runDaemon's comment: after a self-update renames the running
+// binary aside, a fresh lookup would resolve to that renamed old file.
+func runDetach(d *Daemon, o opts, port int, token, passwordHash, exePath string, e *echo.Echo) {
 	fmt.Println("\npulse: moving to background…")
 	d.persist()
 	d.stopSleepInhibitor()
 	removeState()
 	e.Shutdown(context.Background())
 
-	exe, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "pulse: could not locate own executable:", err)
-		os.Exit(1)
-	}
 	logPath := filepath.Join(filepath.Dir(statePath()), "daemon.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -334,7 +343,7 @@ func runDetach(d *Daemon, o opts, port int, token, passwordHash string, e *echo.
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(exe, detachArgs(o, port)...)
+	cmd := exec.Command(exePath, detachArgs(o, port)...)
 	cmd.Env = append(os.Environ(),
 		daemonResumeEnv+"=1",
 		daemonResumeTokenEnv+"="+token,
