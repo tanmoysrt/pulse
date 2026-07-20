@@ -5,7 +5,6 @@ set -eu
 
 REPO="tanmoysrt/pulse"
 BIN="pulse"
-INSTALL_DIR="/usr/bin"
 
 fail() { echo "pulse: $1" >&2; exit 1; }
 
@@ -93,6 +92,27 @@ case "$arch" in
 	*)             fail "unsupported architecture: $arch (amd64 and arm64 only)" ;;
 esac
 
+# Already installed? Ask before replacing it, and reuse its directory so an
+# update lands in the same place. Read from the terminal, since stdin is the
+# piped script when run via `curl | sh`.
+if existing=$(command -v "$BIN" 2>/dev/null); then
+	current=$("$BIN" --version 2>/dev/null || echo "unknown")
+	printf "pulse %s is already installed. Update to the latest release? [y/N] " "$current"
+	if [ -r /dev/tty ]; then read -r ans </dev/tty; else read -r ans; fi
+	case "$ans" in
+		y|Y|yes|YES) ;;
+		*) echo "pulse: leaving the existing install untouched."; exit 0 ;;
+	esac
+	INSTALL_DIR=$(dirname "$existing")
+elif [ "$(id -u)" -eq 0 ]; then
+	INSTALL_DIR="/usr/bin"
+else
+	# A user-writable location so the running daemon can self-update from
+	# the web UI later without ever needing a sudo password prompt.
+	INSTALL_DIR="${HOME}/.local/bin"
+	mkdir -p "$INSTALL_DIR"
+fi
+
 asset="${BIN}-${os}-${arch}"
 url="https://github.com/${REPO}/releases/latest/download/${asset}"
 target="${INSTALL_DIR}/${BIN}"
@@ -102,18 +122,6 @@ sudo=""
 if [ ! -w "$INSTALL_DIR" ]; then
 	command -v sudo >/dev/null 2>&1 || fail "need write access to $INSTALL_DIR (run as root or install sudo)"
 	sudo="sudo"
-fi
-
-# Already installed? Ask before replacing it. Read from the terminal, since
-# stdin is the piped script when run via `curl | sh`.
-if command -v "$BIN" >/dev/null 2>&1; then
-	current=$("$BIN" --version 2>/dev/null || echo "unknown")
-	printf "pulse %s is already installed. Update to the latest release? [y/N] " "$current"
-	if [ -r /dev/tty ]; then read -r ans </dev/tty; else read -r ans; fi
-	case "$ans" in
-		y|Y|yes|YES) ;;
-		*) echo "pulse: leaving the existing install untouched."; exit 0 ;;
-	esac
 fi
 
 install_required_tools
@@ -127,4 +135,8 @@ $sudo mv "$tmp" "$target"
 trap - EXIT
 
 echo "pulse: installed to ${target} ($("$target" --version 2>/dev/null || echo "?"))"
+case ":$PATH:" in
+	*":$INSTALL_DIR:"*) ;;
+	*) echo "pulse: add $INSTALL_DIR to your PATH to run 'pulse' directly" ;;
+esac
 echo "pulse: run 'pulse' to get started."

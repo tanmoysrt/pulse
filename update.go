@@ -129,7 +129,7 @@ func replaceBinary(exe, latest string) error {
 
 	tmp, err := os.CreateTemp(dir, ".pulse-update-*")
 	if err != nil {
-		return fmt.Errorf("no write access to %s (try: sudo pulse update)", dir)
+		return fmt.Errorf("no write access to %s; the browser can't prompt for a password, run `pulse update` from a terminal instead", dir)
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath) // no-op once the rename below succeeds
