@@ -47,7 +47,7 @@ func (s *Session) notifyDone() {
 	if s.d.localNotify {
 		go notify("✨ pulse", body, soundDone)
 	}
-	go s.d.pushAll("✨ pulse", body)
+	go s.d.pushAll("✨ pulse", body, "/s/"+s.id)
 }
 
 // notifyPermission announces the agent is waiting for tool approval.
@@ -59,7 +59,7 @@ func (s *Session) notifyPermission(tool string) {
 	if s.d.localNotify {
 		go notify("🔐 pulse: needs you", body, soundAlert)
 	}
-	go s.d.pushAll("🔐 pulse: needs you", body)
+	go s.d.pushAll("🔐 pulse: needs you", body, "/s/"+s.id)
 }
 
 // notify pops a native OS notification on Linux and macOS. Best-effort: any

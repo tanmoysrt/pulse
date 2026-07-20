@@ -193,7 +193,9 @@ func (d *Daemon) sendPush(sub pushSub, payload []byte) int {
 	return resp.StatusCode
 }
 
-func (d *Daemon) pushAll(title, body string) {
+// pushAll notifies every subscribed browser. url is the app-relative path
+// (e.g. "/s/3") the notification should jump to on click; empty for none.
+func (d *Daemon) pushAll(title, body, url string) {
 	d.mu.Lock()
 	v := d.vapid
 	subs := append([]pushSub(nil), d.pushSubs...)
@@ -201,7 +203,7 @@ func (d *Daemon) pushAll(title, body string) {
 	if v == nil || len(subs) == 0 {
 		return
 	}
-	payload, _ := json.Marshal(map[string]string{"title": title, "body": body})
+	payload, _ := json.Marshal(map[string]string{"title": title, "body": body, "url": url})
 	var dead []string
 	for _, sub := range subs {
 		if code := d.sendPush(sub, payload); code == http.StatusNotFound || code == http.StatusGone {

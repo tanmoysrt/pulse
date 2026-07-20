@@ -19,3 +19,6 @@ var icon512PNG []byte
 
 //go:embed frontend/public/icons/apple-touch-icon.png
 var appleTouchIconPNG []byte
+
+//go:embed frontend/public/icons/badge.png
+var badgePNG []byte

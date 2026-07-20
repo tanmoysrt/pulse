@@ -496,6 +496,7 @@ func startServer(d *Daemon, ln net.Listener) *echo.Echo {
 	e.GET("/icons/icon-192.png", func(c echo.Context) error { return c.Blob(http.StatusOK, "image/png", icon192PNG) })
 	e.GET("/icons/icon-512.png", func(c echo.Context) error { return c.Blob(http.StatusOK, "image/png", icon512PNG) })
 	e.GET("/icons/apple-touch-icon.png", func(c echo.Context) error { return c.Blob(http.StatusOK, "image/png", appleTouchIconPNG) })
+	e.GET("/icons/badge.png", func(c echo.Context) error { return c.Blob(http.StatusOK, "image/png", badgePNG) })
 
 	e.Listener = ln
 	go func() {
