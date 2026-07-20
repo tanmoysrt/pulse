@@ -226,8 +226,10 @@ func runDaemon(o opts) {
 	}
 	ln, port := listen(bindHost, pref)
 	d := newDaemon(token, passwordHash, o.localNotify, port)
+	defer d.stopSleepInhibitor()
 	writeSetup(setupRecord{Tunnel: o.tunnel, Notify: o.localNotify, PasswordHash: passwordHash})
 	d.reconcile()
+	d.startSleepInhibitor()
 	go d.stats.collect()
 	startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})

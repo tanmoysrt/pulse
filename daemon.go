@@ -32,6 +32,7 @@ type Daemon struct {
 	vapid        *vapidKey
 	pushSubs     []pushSub
 	port         int
+	awake        *sleepInhibitor
 }
 
 func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
@@ -72,6 +73,41 @@ func (d *Daemon) remove(id string) {
 	s.cleanup()
 	os.RemoveAll(s.uploadDir())
 	d.persist()
+}
+
+// startSleepInhibitor keeps the machine awake for the daemon's lifetime. A
+// sleeping system suspends both tmux and Pulse's network server.
+func (d *Daemon) startSleepInhibitor() {
+	d.mu.Lock()
+	if d.awake != nil {
+		d.mu.Unlock()
+		return
+	}
+	d.mu.Unlock()
+
+	inhibitor, err := startSleepInhibitor()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not prevent system sleep:", err)
+		return
+	}
+
+	d.mu.Lock()
+	if d.awake == nil {
+		d.awake = inhibitor
+		d.mu.Unlock()
+		fmt.Println("pulse: keeping the system awake while it is running")
+		return
+	}
+	d.mu.Unlock()
+	inhibitor.stop()
+}
+
+func (d *Daemon) stopSleepInhibitor() {
+	d.mu.Lock()
+	inhibitor := d.awake
+	d.awake = nil
+	d.mu.Unlock()
+	inhibitor.stop()
 }
 
 // shutdown ends every session (killing their tmux) and clears all state;

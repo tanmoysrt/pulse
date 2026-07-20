@@ -49,6 +49,10 @@ Each session runs in a detached tmux, and Pulse streams its transcript to the
 browser. It reads history from each tool's own store and never touches your
 global agent config.
 
+While Pulse is running, it prevents automatic system sleep so its server,
+network connection, and detached sessions stay available. The display may still
+turn off or lock normally.
+
 ## Build from source
 
 ```bash
