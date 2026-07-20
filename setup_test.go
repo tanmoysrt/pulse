@@ -1,9 +1,58 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
+
+// writeFakeCert drops a self-signed cert/key pair at target's cert path so
+// registeredDomains() (which reads the SAN back out of the leaf, no separate
+// metadata file) picks it up, without needing a real Let's Encrypt issuance.
+func writeFakeCert(t *testing.T, target string, notAfter time.Time) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     notAfter,
+	}
+	if ip := net.ParseIP(target); ip != nil {
+		tmpl.IPAddresses = []net.IP{ip}
+	} else {
+		tmpl.DNSNames = []string{target}
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPath, keyPath := certPaths(target)
+	if err := os.MkdirAll(filepath.Dir(certPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestExposeStepChoosingAcmeInsertsDomainStep(t *testing.T) {
 	m := wizModel{
@@ -24,9 +73,6 @@ func TestExposeStepChoosingAcmeInsertsDomainStep(t *testing.T) {
 	}
 	if got := m.step(); got != "domain" {
 		t.Fatalf("step = %q, want domain", got)
-	}
-	if !m.input.Focused() {
-		t.Fatal("domain input is not focused")
 	}
 }
 
@@ -49,16 +95,21 @@ func TestExposeStepChoosingLanSkipsDomainStep(t *testing.T) {
 	}
 }
 
-func TestDomainStepPrefillsFromSavedSetup(t *testing.T) {
+func TestDomainStepPrefillsCursorFromSavedSetup(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
+	writeFakeCert(t, "other.example.com", time.Now().Add(60*24*time.Hour))
+
 	m := wizModel{
 		steps: []string{"domain"},
 		input: newWizardInput(),
-		saved: &setupRecord{Domain: "example.com"},
+		saved: &setupRecord{Domain: "other.example.com"},
 	}
 	m.focusStep()
 
-	if got := m.input.Value(); got != "example.com" {
-		t.Fatalf("prefilled domain = %q, want example.com", got)
+	doms := registeredDomains()
+	if doms[m.cursor].Target != "other.example.com" {
+		t.Fatalf("cursor landed on %q, want other.example.com", doms[m.cursor].Target)
 	}
 }
 
@@ -96,6 +147,53 @@ func TestCertNameSanitizesTarget(t *testing.T) {
 func TestRenewalWindow(t *testing.T) {
 	if renewalWindow(true) >= renewalWindow(false) {
 		t.Fatal("IP renewal window should be shorter than domain renewal window")
+	}
+}
+
+func TestDomainStepRequiresARegisteredDomain(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	m := wizModel{steps: []string{"domain"}, input: newWizardInput()}
+	next, _ := m.commit()
+	m = next.(wizModel)
+
+	if m.error == "" {
+		t.Fatal("expected an error when no domain is registered")
+	}
+	if m.step() != "domain" {
+		t.Fatal("should not advance past domain with nothing registered")
+	}
+
+	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
+
+	next, _ = m.commit()
+	m = next.(wizModel)
+	if m.error != "" {
+		t.Fatalf("unexpected error once a domain is registered: %v", m.error)
+	}
+	if m.o.domain != "example.com" {
+		t.Fatalf("o.domain = %q, want example.com", m.o.domain)
+	}
+}
+
+func TestRegisteredDomainsReportsExpiry(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeFakeCert(t, "fresh.example.com", time.Now().Add(60*24*time.Hour))
+	writeFakeCert(t, "stale.example.com", time.Now().Add(-24*time.Hour))
+
+	doms := registeredDomains()
+	if len(doms) != 2 {
+		t.Fatalf("len(doms) = %d, want 2", len(doms))
+	}
+	byTarget := map[string]registeredDomain{}
+	for _, d := range doms {
+		byTarget[d.Target] = d
+	}
+	if byTarget["fresh.example.com"].Expired {
+		t.Fatal("fresh.example.com should not be reported expired")
+	}
+	if !byTarget["stale.example.com"].Expired {
+		t.Fatal("stale.example.com should be reported expired")
 	}
 }
 

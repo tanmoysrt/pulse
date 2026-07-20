@@ -10,10 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -44,11 +45,66 @@ func renewalWindow(isIP bool) time.Duration {
 	return 30 * 24 * time.Hour
 }
 
+// registeredDomain is one target "pulse add-domain" has issued a
+// certificate for, as offered in the setup wizard's domain picker.
+type registeredDomain struct {
+	Target   string
+	NotAfter time.Time
+	Expired  bool
+}
+
+// registeredDomains lists every target with a certificate on disk, read back
+// from each certificate's own SAN — no separate metadata file needed, since
+// issueCertificate always requests exactly one name (domain or IP) per cert.
+func registeredDomains() []registeredDomain {
+	entries, err := os.ReadDir(acmeDir())
+	if err != nil {
+		return nil
+	}
+	var out []registeredDomain
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(acmeDir(), e.Name(), "cert.pem"))
+		if err != nil {
+			continue
+		}
+		leaf, err := certcrypto.ParsePEMCertificate(b)
+		if err != nil {
+			continue
+		}
+		var target string
+		switch {
+		case len(leaf.DNSNames) > 0:
+			target = leaf.DNSNames[0]
+		case len(leaf.IPAddresses) > 0:
+			target = leaf.IPAddresses[0].String()
+		default:
+			continue
+		}
+		out = append(out, registeredDomain{Target: target, NotAfter: leaf.NotAfter, Expired: time.Now().After(leaf.NotAfter)})
+	}
+	slices.SortFunc(out, func(a, b registeredDomain) int { return strings.Compare(a.Target, b.Target) })
+	return out
+}
+
+// loadCert reads target's certificate from disk as-is, expired or not. pulse
+// never issues or renews while running (see runDaemon) — that's "pulse
+// add-domain"'s job — so at serve time this is the only source of truth.
+func loadCert(target string) (*tls.Certificate, error) {
+	certPath, keyPath := certPaths(target)
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	return &pair, nil
+}
+
 // loadValidCert reads a previously issued cert for target, if it's not yet
 // inside its renewal window — the "still active, don't reissue" case.
 func loadValidCert(target string) (*tls.Certificate, bool) {
-	certPath, keyPath := certPaths(target)
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	pair, err := loadCert(target)
 	if err != nil {
 		return nil, false
 	}
@@ -60,12 +116,14 @@ func loadValidCert(target string) (*tls.Certificate, bool) {
 		return nil, false
 	}
 	pair.Leaf = leaf
-	return &pair, true
+	return pair, true
 }
 
 // ensureCertificate returns a valid certificate for target, reusing one
 // already on disk when it isn't close to expiry, else validating that
 // target actually points here and issuing a fresh one through Let's Encrypt.
+// Only "pulse add-domain" calls this — the daemon itself only ever reads
+// whatever this last produced, via loadCert.
 func ensureCertificate(target string) (*tls.Certificate, error) {
 	if cert, ok := loadValidCert(target); ok {
 		return cert, nil
@@ -226,38 +284,56 @@ func issueCertificate(target string) (*tls.Certificate, error) {
 	return &pair, nil
 }
 
-// certStore lets the TLS listener pick up a renewed certificate without a
-// restart: renewCertLoop swaps it in, GetCertificate reads it per handshake.
-type certStore struct {
-	mu   sync.RWMutex
-	cert *tls.Certificate
-}
-
-func newCertStore(cert *tls.Certificate) *certStore { return &certStore{cert: cert} }
-
-func (s *certStore) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.cert, nil
-}
-
-func (s *certStore) set(cert *tls.Certificate) {
-	s.mu.Lock()
-	s.cert = cert
-	s.mu.Unlock()
-}
-
-// renewCertLoop periodically re-runs ensureCertificate for the life of the
-// daemon, swapping the live certificate in on renewal (a no-op most days,
-// since ensureCertificate reuses a cert until it nears expiry).
-func renewCertLoop(d *Daemon) {
-	for {
-		time.Sleep(12 * time.Hour)
-		cert, err := ensureCertificate(d.acmeDomain)
-		if err != nil {
-			fmt.Println("pulse: certificate renewal failed:", err)
-			continue
-		}
-		d.certStore.set(cert)
+// runAddDomain is the explicit, admin-run step that registers a domain or IP
+// for Let's Encrypt: it validates the target, issues a certificate (or
+// confirms the existing one is still valid, without reissuing), and grants
+// pulse's own binary permission to bind privileged ports. The daemon itself
+// never does any of this at startup — see runDaemon's acme handling, which
+// only ever loads whatever this command last produced, expired or not.
+func runAddDomain(target string) {
+	if cert, ok := loadValidCert(target); ok {
+		leaf, _ := x509.ParseCertificate(cert.Certificate[0])
+		fmt.Printf("pulse: %s already has a valid certificate (until %s) — not reissuing\n", target, leaf.NotAfter.Format("2006-01-02"))
+		applyBindCapability()
+		return
 	}
+	fmt.Printf("pulse: requesting a certificate for %s from Let's Encrypt…\n", target)
+	if err := validateExposeTarget(target); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse:", err)
+		os.Exit(1)
+	}
+	if _, err := issueCertificate(target); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not obtain certificate:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("pulse: certificate ready for %s\n", target)
+	applyBindCapability()
+}
+
+// applyBindCapability grants pulse's own binary permission to bind ports
+// below 1024 without root, so `pulse` can serve HTTPS on :443 unprivileged
+// afterwards. Re-run "pulse add-domain" (as root) any time the binary is
+// replaced — e.g. after an update — since Linux clears file capabilities on
+// any write to the file.
+func applyBindCapability() {
+	if runtime.GOOS != "linux" {
+		fmt.Println("pulse: on this OS, binding port 443 needs root — run pulse with sudo, or put it behind a reverse proxy")
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if _, err := exec.LookPath("setcap"); err != nil {
+		fmt.Println("pulse: install setcap (e.g. `apt install libcap2-bin`), then run: sudo setcap cap_net_bind_service=+ep " + exe)
+		return
+	}
+	if out, err := exec.Command("setcap", "cap_net_bind_service=+ep", exe).CombinedOutput(); err != nil {
+		fmt.Println("pulse: run this once so pulse can bind port 443 without root: sudo setcap cap_net_bind_service=+ep " + exe)
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			fmt.Println("       (" + msg + ")")
+		}
+		return
+	}
+	fmt.Println("pulse: granted " + exe + " permission to bind port 443 without root")
 }

@@ -41,7 +41,14 @@ pulse <claude|codex|opencode> [args...]
 pulse ls
 pulse attach <id>
 pulse update
+pulse add-domain <domain-or-ip>
 ```
+
+`pulse add-domain` issues (or confirms) a Let's Encrypt certificate for a
+domain or IP ahead of time, so the setup wizard's "Let's Encrypt" option has
+something to serve. Run it once (as root, or with sudo) before choosing that
+option; pulse itself never requests or renews a certificate while running —
+re-run this command to renew.
 
 ## How it works
 

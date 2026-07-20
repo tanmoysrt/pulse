@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,6 +66,13 @@ func main() {
 			return
 		case "stop":
 			runStop()
+			return
+		case "add-domain":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "usage: pulse add-domain <domain-or-ip>")
+				os.Exit(2)
+			}
+			runAddDomain(args[1])
 			return
 		}
 	}
@@ -270,20 +278,22 @@ func runDaemon(o opts) {
 		pref = 443
 	}
 
-	var cs *certStore
+	var tlsCert *tls.Certificate
 	if o.acme {
-		fmt.Printf("pulse: preparing certificate for %s…\n", o.domain)
-		cert, err := ensureCertificate(o.domain)
+		cert, err := loadCert(o.domain)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "pulse: could not get a certificate:", err)
+			fmt.Fprintln(os.Stderr, "pulse: no certificate for "+o.domain+" yet — run: pulse add-domain "+o.domain)
 			return
 		}
-		cs = newCertStore(cert)
+		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil && time.Now().After(leaf.NotAfter) {
+			fmt.Printf("pulse: certificate for %s expired on %s — serving it anyway; renew with: pulse add-domain %s\n", o.domain, leaf.NotAfter.Format("2006-01-02"), o.domain)
+		}
+		tlsCert = cert
 	}
 
 	ln, port := listen(bindHost, pref)
-	if cs != nil {
-		ln = tls.NewListener(ln, &tls.Config{GetCertificate: cs.get})
+	if tlsCert != nil {
+		ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{*tlsCert}})
 	}
 	d := newDaemon(token, passwordHash, o.localNotify, port)
 	defer d.stopSleepInhibitor()
@@ -296,10 +306,6 @@ func runDaemon(o opts) {
 	d.urls, d.primary = urls, primary // exposed via /api/status so a later `pulse` can reprint this exact banner
 	d.tunnel = o.tunnel
 	d.exePath = exePath
-	d.certStore, d.acmeDomain = cs, o.domain
-	if cs != nil {
-		go renewCertLoop(d)
-	}
 
 	e := startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})

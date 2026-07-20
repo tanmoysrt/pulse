@@ -149,20 +149,25 @@ func (m wizModel) Init() tea.Cmd { return textinput.Blink }
 
 func (m *wizModel) focusStep() {
 	m.input.Reset()
+	m.cursor = 0
 	switch m.step() {
 	case "password":
 		m.input.Placeholder = "required"
 		m.input.Focus()
 	case "domain":
-		m.input.Placeholder = "your-domain.com or 203.0.113.5"
-		if m.saved != nil && m.saved.Domain != "" {
-			m.input.SetValue(m.saved.Domain)
+		// Auto-fill: land on the previously used domain, not the top of the list.
+		if m.saved == nil {
+			break
 		}
-		m.input.Focus()
+		for i, d := range registeredDomains() {
+			if d.Target == m.saved.Domain {
+				m.cursor = i
+				break
+			}
+		}
 	default:
 		m.input.Blur()
 	}
-	m.cursor = 0
 }
 
 func (m wizModel) step() string { return m.steps[m.i] }
@@ -170,13 +175,19 @@ func (m wizModel) step() string { return m.steps[m.i] }
 // isTextStep reports whether the current step is a free-text input rather
 // than a list of choices — cursor movement and up/down navigation don't apply.
 func (m wizModel) isTextStep() bool {
-	return m.step() == "password" || m.step() == "domain"
+	return m.step() == "password"
 }
 
 // maxCursor is the highest selectable choice index for the current step.
 func (m wizModel) maxCursor() int {
-	if m.step() == "expose" {
+	switch m.step() {
+	case "expose":
 		return len(exposeChoices) - 1
+	case "domain":
+		if n := len(registeredDomains()); n > 0 {
+			return n - 1
+		}
+		return 0
 	}
 	return 1
 }
@@ -231,16 +242,12 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 			m.steps = insertDomainStep(m.steps, m.i)
 		}
 	case "domain":
-		v := strings.TrimSpace(m.input.Value())
-		if v == "" {
-			m.error = "Enter the domain or IP this server is reachable at."
+		doms := registeredDomains()
+		if len(doms) == 0 {
+			m.error = "No domains registered yet — run: pulse add-domain <target>, then restart setup."
 			return m, nil
 		}
-		if err := validateExposeTarget(v); err != nil {
-			m.error = err.Error()
-			return m, nil
-		}
-		m.o.domain = v
+		m.o.domain = doms[m.cursor].Target
 	case "password":
 		m.o.password = strings.TrimSpace(m.input.Value())
 		if m.o.password == "" {
@@ -283,12 +290,17 @@ func (m wizModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.renderChoices(exposeChoices))
 	case "domain":
-		b.WriteString(titleStyle.Render("Which domain or IP is this server reachable at?"))
+		b.WriteString(titleStyle.Render("Which domain or IP should pulse serve?"))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("Pulse will request a trusted HTTPS certificate for it from Let's Encrypt."))
-		b.WriteString("\n\n  ")
-		b.WriteString(m.input.View())
-		b.WriteString("\n")
+		doms := registeredDomains()
+		if len(doms) == 0 {
+			b.WriteString(dimStyle.Render("No domains registered yet — run: pulse add-domain <target>"))
+			b.WriteString("\n")
+		} else {
+			b.WriteString(dimStyle.Render("TLS status is shown next to each one."))
+			b.WriteString("\n\n")
+			b.WriteString(m.renderChoices(domainChoices(doms)))
+		}
 	case "password":
 		b.WriteString(titleStyle.Render("Set a login password"))
 		b.WriteString("\n")
@@ -309,6 +321,19 @@ func (m wizModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
+}
+
+// domainChoices renders each registered domain alongside its TLS status.
+func domainChoices(doms []registeredDomain) []choice {
+	choices := make([]choice, len(doms))
+	for i, d := range doms {
+		desc := "valid until " + d.NotAfter.Format("2006-01-02")
+		if d.Expired {
+			desc = "expired " + d.NotAfter.Format("2006-01-02") + " — renew: pulse add-domain " + d.Target
+		}
+		choices[i] = choice{d.Target, desc}
+	}
+	return choices
 }
 
 func (m wizModel) renderChoices(choices []choice) string {
