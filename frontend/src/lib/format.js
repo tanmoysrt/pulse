@@ -3,23 +3,32 @@ import MarkdownIt from 'markdown-it'
 export function firstLine(text) { return String(text || '').split('\n')[0] }
 export function parseJSON(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
+// Skips array/object values (e.g. Codex update_plan's `plan` is an array,
+// while Claude's ExitPlanMode `plan` is a string) so a structurally different
+// field under the same key never stringifies into "[object Object]".
 function pick(o, keys) {
-  for (const k of keys) { if (o && o[k] != null) return String(o[k]) }
+  for (const k of keys) {
+    const v = o && o[k]
+    if (v != null && typeof v !== 'object') return String(v)
+  }
   return ''
 }
 
-const SUMMARY_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description', 'plan']
+// 'cmd' is Codex's exec tool; 'command' is Claude/opencode's Bash.
+const SUMMARY_KEYS = ['command', 'cmd', 'file_path', 'path', 'pattern', 'url', 'query', 'description', 'plan']
 
 // Most tool inputs reduce to one of SUMMARY_KEYS, but a few carry their
-// headline in an array (AskUserQuestion's questions, TodoWrite's todos)
-// rather than a flat string field.
+// headline in an array rather than a flat string field: Claude's
+// AskUserQuestion/TodoWrite and Codex's structurally-equivalent
+// request_user_input/update_plan.
 function summarize(input) {
   if (!input) return ''
   if (Array.isArray(input.questions) && input.questions.length) {
     return input.questions.map((q) => q.question).join(' · ')
   }
-  if (Array.isArray(input.todos)) {
-    return input.todos.length + (input.todos.length === 1 ? ' task' : ' tasks')
+  const steps = input.todos || input.plan
+  if (Array.isArray(steps)) {
+    return steps.length + (steps.length === 1 ? ' task' : ' tasks')
   }
   return pick(input, SUMMARY_KEYS).split('\n')[0]
 }
@@ -31,17 +40,23 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 export function renderText(text) { return md.render(String(text || '')) }
 
 const PERM_ACTIONS = {
+  // Claude Code / opencode
   Bash: 'Run command', Read: 'Read file', Edit: 'Edit file', Write: 'Write file',
   MultiEdit: 'Edit file', NotebookEdit: 'Edit notebook', Glob: 'Find files',
   Grep: 'Search', WebFetch: 'Fetch page', WebSearch: 'Web search',
   Task: 'Run agent', TodoWrite: 'Update tasks', AskUserQuestion: 'Question',
   ExitPlanMode: 'Exit plan mode', BashOutput: 'Read output', KillShell: 'Stop command',
+  // Codex
+  exec_command: 'Run command', write_stdin: 'Send input', wait: 'Wait',
+  view_image: 'View image', request_user_input: 'Question', update_plan: 'Update tasks',
 }
 export function permAction(p) { return PERM_ACTIONS[p.toolName] || p.toolName }
 export function permSummary(p) { return summarize(p.toolInput) }
 export function permDetails(p) {
   const input = p.toolInput
-  if (p.toolName === 'AskUserQuestion' && Array.isArray(input?.questions)) {
+  // Structural check (not a toolName allowlist) so it also covers Codex's
+  // request_user_input, which carries the same questions/options shape.
+  if (Array.isArray(input?.questions)) {
     return input.questions.map((q) => {
       const opts = (q.options || []).map((o) => `  - ${o.label}${o.description ? ': ' + o.description : ''}`)
       return [q.question, ...opts].join('\n')
