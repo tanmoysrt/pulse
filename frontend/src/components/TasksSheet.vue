@@ -1,5 +1,5 @@
 <template>
-  <div class="tasks-sheet">
+  <div id="tasksSheet" class="tasks-sheet">
     <ul class="tasks-list">
       <li v-for="(t, i) in todos" :key="i" :class="t.status">
         <span class="tick"></span>

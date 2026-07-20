@@ -128,11 +128,17 @@ function measure() {
   nextTick(() => restoreAnchor(a))
 }
 
+// Coalesce to one reactive update per frame instead of one per scroll event.
+let scrollRaf = 0
 function onScroll() {
-  const el = viewport.value; if (!el) return
-  scrollTop.value = el.scrollTop
-  stick = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-  emit('scroll')
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    const el = viewport.value; if (!el) return
+    scrollTop.value = el.scrollTop
+    stick = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    emit('scroll')
+  })
 }
 
 let ro
@@ -148,7 +154,7 @@ onMounted(() => {
   ro.observe(content.value)
   if (stick) nextTick(scrollToBottom)
 })
-onBeforeUnmount(() => { if (ro) ro.disconnect(); if (raf) cancelAnimationFrame(raf) })
+onBeforeUnmount(() => { if (ro) ro.disconnect(); if (raf) cancelAnimationFrame(raf); if (scrollRaf) cancelAnimationFrame(scrollRaf) })
 
 watch(() => props.items.length, (n, old) => {
   const firstKey = n ? props.itemKey(props.items[0]) : null
@@ -190,6 +196,6 @@ defineExpose({ viewport, scrollToBottom, nearBottom })
 </script>
 
 <style scoped>
-.vlist { overflow-y: auto; }
+.vlist { overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
 .vrow { display: flow-root; } /* contain child margins so measured height is exact */
 </style>

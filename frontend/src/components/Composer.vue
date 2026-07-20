@@ -7,12 +7,15 @@
           <span v-else class="filesvg">{{ fileExtLabel(a.name) }}</span>
           <span class="attach-name">{{ a.status === 'error' ? 'Failed – tap to remove' : a.name }}</span>
           <span v-if="a.status === 'uploading'" class="attach-spin"></span>
-          <button class="attach-remove" title="Remove" @click="removeAttachment(a.id)">✕</button>
+          <button class="attach-remove" title="Remove attachment" aria-label="Remove attachment" @click="removeAttachment(a.id)">
+            <Icon name="x" :size="12" />
+          </button>
         </div>
       </div>
 
       <textarea ref="input" rows="1" :value="text" :disabled="disabled"
         :placeholder="disabled ? 'Session closed' : ('Message ' + agentLabel(agent) + '…')"
+        :aria-label="disabled ? 'Session closed' : ('Message ' + agentLabel(agent))"
         @input="onInput" @keydown="onKeydown"></textarea>
 
       <div class="composer-bottom">

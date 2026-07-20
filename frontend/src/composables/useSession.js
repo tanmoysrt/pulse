@@ -1,5 +1,5 @@
 import { reactive, ref, computed, onUnmounted } from 'vue'
-import { post } from '../lib/api'
+import { post, getJSON } from '../lib/api'
 import { applyCommandState, modelFamily } from '../lib/format'
 import { MODES_BY_AGENT, STATIC_MODELS_BY_AGENT, EFFORTS_BY_AGENT, WORKING_VERBS } from '../constants'
 
@@ -90,13 +90,21 @@ export function useSession(id, seedAgent = '', seedTitle = '') {
     poll()
   }
 
-  function connect() {
+  async function connect() {
+    // 401 here sends us to /login instead of the SSE endpoint retrying forever.
+    try { await getJSON('/api/stats') } catch (e) { return }
+
     es = new EventSource(base + '/events')
+    let errorStreak = 0
     es.addEventListener('message', (e) => onMessage(JSON.parse(e.data)))
     es.addEventListener('cleared', () => { state.messages = []; seen.clear() })
     es.addEventListener('closed', () => { disconnect(); state.closed = true })
-    es.addEventListener('state', (e) => applyState(JSON.parse(e.data)))
-    es.onerror = () => { if (state.status !== 'connecting') { const p = state.status; state.status = 'connecting'; onStatusChange('connecting', p) } }
+    es.addEventListener('state', (e) => { errorStreak = 0; applyState(JSON.parse(e.data)) })
+    es.onerror = () => {
+      if (state.status !== 'connecting') { const p = state.status; state.status = 'connecting'; onStatusChange('connecting', p) }
+      // A cookie expiring mid-chat looks the same as a blip; recheck auth after a few.
+      if (++errorStreak === 4) getJSON('/api/stats').catch(() => {})
+    }
   }
   function disconnect() { if (es) { es.close(); es = null } clearInterval(timer); timer = null }
 

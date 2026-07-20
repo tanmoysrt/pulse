@@ -13,20 +13,21 @@
     </div>
 
     <div class="header-right">
-      <div v-if="todos.length" class="tasks-chip" @click="$emit('toggleTasks')">
+      <button v-if="todos.length" class="tasks-chip" :aria-expanded="tasksOpen" aria-controls="tasksSheet" @click="$emit('toggleTasks')">
         <span class="tasks-progress">{{ done }}/{{ todos.length }}</span>
         <span class="tasks-now">{{ currentTask }}</span>
         <Chevron :up="tasksOpen" />
-      </div>
+      </button>
 
       <div class="kebab-wrap" ref="root">
-        <button class="kebab" :class="{ active: open }" title="Session menu" aria-label="Session menu" @click="toggle">
+        <button class="kebab" :class="{ active: open }" title="Session menu" aria-label="Session menu"
+          aria-haspopup="menu" :aria-expanded="open" @click="toggle">
           <Icon name="ellipsis-vertical" :size="16" />
         </button>
-        <div v-if="open" class="kebab-menu">
-          <button class="menuitem" @click="run('compact')">Compact chat</button>
-          <button class="menuitem danger" @click="run('clear')">Clear chat</button>
-          <button class="menuitem danger" @click="run('close')">Close session</button>
+        <div v-if="open" class="kebab-menu" role="menu" @keydown.esc="close">
+          <button class="menuitem" role="menuitem" @click="run('compact')">Compact chat</button>
+          <button class="menuitem danger" role="menuitem" @click="run('clear')">Clear chat</button>
+          <button class="menuitem danger" role="menuitem" @click="run('close')">Close session</button>
         </div>
       </div>
     </div>
@@ -49,8 +50,10 @@ const root = ref(null)
 
 const done = computed(() => props.todos.filter((t) => t.status === 'completed').length)
 const currentTask = computed(() => {
-  const t = props.todos.find((x) => x.status === 'in_progress') || props.todos.find((x) => x.status !== 'completed')
-  return t ? t.content : 'All tasks done'
+  const running = props.todos.find((x) => x.status === 'in_progress')
+  if (running) return 'Working: ' + running.content
+  const next = props.todos.find((x) => x.status !== 'completed')
+  return next ? next.content : 'All tasks done'
 })
 
 function toggle() {
@@ -58,7 +61,8 @@ function toggle() {
   if (open.value) document.addEventListener('mousedown', onAway)
   else document.removeEventListener('mousedown', onAway)
 }
-function onAway(e) { if (root.value && !root.value.contains(e.target)) { open.value = false; document.removeEventListener('mousedown', onAway) } }
-function run(action) { open.value = false; document.removeEventListener('mousedown', onAway); emit(action) }
+function close() { open.value = false; document.removeEventListener('mousedown', onAway) }
+function onAway(e) { if (root.value && !root.value.contains(e.target)) close() }
+function run(action) { close(); emit(action) }
 onBeforeUnmount(() => document.removeEventListener('mousedown', onAway))
 </script>

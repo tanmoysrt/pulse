@@ -1,6 +1,8 @@
 <template>
   <div class="app">
-    <div v-if="!appReady" class="boot-loader"><div class="pulse-rings"><span></span><span></span><span></span></div></div>
+    <div v-if="!appReady" class="boot-loader" role="status" aria-live="polite" aria-label="Loading">
+      <div class="pulse-rings"><span></span><span></span><span></span></div>
+    </div>
 
     <SessionHeader
       :title="state.title" :status="state.status" :todos="state.todos" :tasksOpen="tasksOpen"
@@ -32,9 +34,9 @@
           </div>
         </div>
         <div v-if="state.status === 'running'" class="working">
-          <span class="pulse-dot"></span>
-          <span class="working-verb">{{ workingVerb }}…</span>
-          <span class="working-time">{{ elapsed }}s</span>
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span class="working-verb" role="status" aria-live="polite">{{ workingVerb }}…</span>
+          <span class="working-time" aria-hidden="true">{{ elapsed }}s</span>
         </div>
       </template>
     </Transcript>
@@ -78,7 +80,10 @@ const shadow = ref(false)
 const showEmpty = computed(() => !state.closed && !state.messages.length && !isBusy.value)
 
 function goHome() { router.push('/') }
-function onClear() { clear() }
+function onClear() {
+  if (!window.confirm('Clear this chat? This cannot be undone.')) return
+  clear()
+}
 function onClose() {
   if (!window.confirm('Close this session? This ends the ' + agentLabel(state.agent) + ' process.')) return
   close().then((r) => { if (r.ok) goHome() })

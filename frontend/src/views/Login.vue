@@ -15,7 +15,7 @@
         </button>
       </form>
 
-      <p v-if="msg" class="login-msg" :class="{ err: isErr }">{{ msg }}</p>
+      <p v-if="msg" class="login-msg" :class="{ err: isErr }" role="status" aria-live="polite">{{ msg }}</p>
       <p class="login-hint">Tip: scanning the QR from the terminal skips this.</p>
     </div>
   </div>

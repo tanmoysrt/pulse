@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
-  <div class="modal-backdrop" @click.self="$emit('close')">
-    <div class="modal settings-modal">
+  <div class="modal-backdrop" @click.self="close">
+    <div ref="root" class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Session options" tabindex="-1">
       <div class="settings-head">
         <h3>Options</h3>
-        <button class="modal-x" aria-label="Close" @click="$emit('close')"><Icon name="x" :size="16" /></button>
+        <button class="modal-x" aria-label="Close" @click="close"><Icon name="x" :size="16" /></button>
       </div>
 
       <template v-if="modes.length">
@@ -23,7 +23,7 @@
 
       <template v-if="models.length">
         <div class="modal-label">Model</div>
-        <input v-if="searchable" v-model="q" class="opt-search" placeholder="Search models…" />
+        <input v-if="searchable" v-model="q" class="opt-search" placeholder="Search models…" aria-label="Search models" />
         <div class="opt-list">
           <button v-for="o in shownModels" :key="o.id" :class="{ on: modelLabel === o.label }" @click="$emit('setModel', o)">
             <span>{{ o.label }}</span>
@@ -39,6 +39,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useModal } from '../composables/useModal'
 import Icon from './Icon.vue'
 
 const props = defineProps({
@@ -48,7 +49,11 @@ const props = defineProps({
   mode: String, modelLabel: String, effortLabel: String,
   searchable: Boolean,
 })
-defineEmits(['close', 'setMode', 'setModel', 'setEffort'])
+const emit = defineEmits(['close', 'setMode', 'setModel', 'setEffort'])
+
+const root = ref(null)
+function close() { emit('close') }
+useModal(root, close)
 
 const q = ref('')
 const shownModels = computed(() => {

@@ -1,6 +1,8 @@
 <template>
   <div class="home">
-    <div v-if="!loaded" class="boot-loader"><div class="pulse-rings"><span></span><span></span><span></span></div></div>
+    <div v-if="!loaded" class="boot-loader" role="status" aria-live="polite" aria-label="Loading">
+      <div class="pulse-rings"><span></span><span></span><span></span></div>
+    </div>
 
     <div class="home-head">
       <div class="home-brand"><PulseLogo class="logo" /><span>Pulse</span></div>
@@ -25,7 +27,7 @@
     <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
       <template #default="{ item }">
         <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
-        <button v-else class="card" @click="open(item.s, item.live)">
+        <button v-else class="card" :class="{ flat: !item.live }" @click="open(item.s, item.live)">
           <div class="agent-badge" :class="'agent-' + item.s.tool">
             <AgentLogo :tool="item.s.tool" />
             <span v-if="item.live" class="live-corner" title="Live"></span>

@@ -1,6 +1,6 @@
 <template>
-  <div class="modal-backdrop" @click.self="$emit('close')">
-    <div class="modal">
+  <div class="modal-backdrop" @click.self="close">
+    <div ref="root" class="modal new-chat-modal" role="dialog" aria-modal="true" aria-label="New chat" tabindex="-1">
       <h3>New chat</h3>
 
       <div class="modal-label">Agent</div>
@@ -16,13 +16,13 @@
         <span>{{ path || '…' }}</span>
       </div>
       <div class="dir-list">
-        <div v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)"><Icon name="folder" :size="15" />{{ name }}</div>
+        <button v-for="name in dirs" :key="name" class="dir-row" @click="enter(name)"><Icon name="folder" :size="15" />{{ name }}</button>
         <div v-if="!dirs.length" class="dir-empty">No subfolders. Start uses this directory.</div>
       </div>
 
       <div class="modal-actions">
         <button class="btn btn-primary" :disabled="!path || starting" @click="start">{{ starting ? 'Starting…' : 'Start' }}</button>
-        <button class="btn btn-ghost" @click="$emit('close')">Cancel</button>
+        <button class="btn btn-ghost" @click="close">Cancel</button>
       </div>
     </div>
   </div>
@@ -32,11 +32,15 @@
 import { ref, computed, onMounted } from 'vue'
 import { listDirs, spawnSession } from '../lib/api'
 import { AGENTS, AGENT_LABELS } from '../constants'
+import { useModal } from '../composables/useModal'
 import AgentLogo from './AgentLogo.vue'
 import Icon from './Icon.vue'
 
 const props = defineProps({ installed: { type: Array, default: () => [] } })
 const emit = defineEmits(['close', 'started'])
+const root = ref(null)
+function close() { emit('close') }
+useModal(root, close)
 
 const agents = computed(() => AGENTS.filter((a) => props.installed.includes(a)))
 const agent = ref(agents.value[0] || 'claude')

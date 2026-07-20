@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="perm-backdrop"></div>
-    <div class="perm-sheet">
+    <div ref="root" class="perm-sheet" role="dialog" aria-modal="true" :aria-label="permAction(pending)" tabindex="-1">
       <div class="perm-handle"></div>
       <div class="perm-top">
         <div class="perm-title-row"><span class="perm-action">{{ permAction(pending) }}</span></div>
@@ -20,9 +20,14 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { permAction, permSummary, permDetails } from '../lib/format'
+import { useModal } from '../composables/useModal'
 
 const props = defineProps({ pending: { type: Object, required: true } })
-defineEmits(['decide'])
+const emit = defineEmits(['decide'])
 const details = ref(false)
 watch(() => props.pending && props.pending.id, () => { details.value = false })
+
+// Escape denies rather than just closing, the safer default here.
+const root = ref(null)
+useModal(root, () => emit('decide', 'deny'))
 </script>
