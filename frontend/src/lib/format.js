@@ -8,8 +8,22 @@ function pick(o, keys) {
   return ''
 }
 
-const SUMMARY_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description']
-export function toolSummary(m) { return pick(parseJSON(m.text) || {}, SUMMARY_KEYS).split('\n')[0] }
+const SUMMARY_KEYS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description', 'plan']
+
+// Most tool inputs reduce to one of SUMMARY_KEYS, but a few carry their
+// headline in an array (AskUserQuestion's questions, TodoWrite's todos)
+// rather than a flat string field.
+function summarize(input) {
+  if (!input) return ''
+  if (Array.isArray(input.questions) && input.questions.length) {
+    return input.questions.map((q) => q.question).join(' · ')
+  }
+  if (Array.isArray(input.todos)) {
+    return input.todos.length + (input.todos.length === 1 ? ' task' : ' tasks')
+  }
+  return pick(input, SUMMARY_KEYS).split('\n')[0]
+}
+export function toolSummary(m) { return summarize(parseJSON(m.text)) }
 
 // Full CommonMark for message bubbles. html:false escapes any raw HTML in the
 // text, which keeps v-html safe from injected markup.
@@ -20,10 +34,21 @@ const PERM_ACTIONS = {
   Bash: 'Run command', Read: 'Read file', Edit: 'Edit file', Write: 'Write file',
   MultiEdit: 'Edit file', NotebookEdit: 'Edit notebook', Glob: 'Find files',
   Grep: 'Search', WebFetch: 'Fetch page', WebSearch: 'Web search',
+  Task: 'Run agent', TodoWrite: 'Update tasks', AskUserQuestion: 'Question',
+  ExitPlanMode: 'Exit plan mode', BashOutput: 'Read output', KillShell: 'Stop command',
 }
 export function permAction(p) { return PERM_ACTIONS[p.toolName] || p.toolName }
-export function permSummary(p) { return pick(p.toolInput || {}, SUMMARY_KEYS).split('\n')[0] }
-export function permDetails(p) { try { return JSON.stringify(p.toolInput, null, 2) } catch (e) { return '' } }
+export function permSummary(p) { return summarize(p.toolInput) }
+export function permDetails(p) {
+  const input = p.toolInput
+  if (p.toolName === 'AskUserQuestion' && Array.isArray(input?.questions)) {
+    return input.questions.map((q) => {
+      const opts = (q.options || []).map((o) => `  - ${o.label}${o.description ? ': ' + o.description : ''}`)
+      return [q.question, ...opts].join('\n')
+    }).join('\n\n')
+  }
+  try { return JSON.stringify(input, null, 2) } catch (e) { return '' }
+}
 
 export function modelFamily(m) {
   const first = String(m || '').replace(/^claude-/, '').split(/[-\s]/)[0] || ''
