@@ -8,17 +8,6 @@
         </div>
 
         <div class="sheet-body">
-            <div v-for="m in metrics" :key="m.key" class="stat">
-              <div class="stat-head">
-                <span class="stat-icon" :style="{ color: m.color }"><Icon :name="m.icon" :size="15" /></span>
-                <span class="stat-label">{{ m.label }}</span>
-                <span v-if="hasStats" class="stat-value">{{ m.display }}</span>
-                <span v-else class="skeleton skeleton-val"></span>
-              </div>
-              <Sparkline v-if="hasStats" :values="m.values" :max="m.max" :color="m.color" />
-              <div v-else class="skeleton skeleton-spark"></div>
-            </div>
-
             <div class="set-row">
               <div class="set-row-main">
                 <div class="set-row-title">Push notifications</div>
@@ -42,6 +31,17 @@
                 :title="isDev ? 'Dev builds can\'t self-update' : ''"
                 @click="onUpdateClick"
               >{{ updateLabel }}</button>
+            </div>
+
+            <div v-for="m in metrics" :key="m.key" class="stat">
+              <div class="stat-head">
+                <span class="stat-icon" :style="{ color: m.color }"><Icon :name="m.icon" :size="15" /></span>
+                <span class="stat-label">{{ m.label }}</span>
+                <span v-if="hasStats" class="stat-value">{{ m.display }}</span>
+                <span v-else class="skeleton skeleton-val"></span>
+              </div>
+              <Sparkline v-if="hasStats" :values="m.values" :max="m.max" :color="m.color" />
+              <div v-else class="skeleton skeleton-spark"></div>
             </div>
 
           <button class="btn btn-ghost btn-block set-logout" @click="doLogout">Log out</button>
