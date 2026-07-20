@@ -63,6 +63,18 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div v-if="showUpToDate" class="modal-backdrop" @click.self="showUpToDate = false">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="No update available">
+        <h3>You're up to date</h3>
+        <p class="modal-copy">Pulse {{ ver.current }} is the latest version.</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" @click="showUpToDate = false">OK</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -122,6 +134,7 @@ const isDev = computed(() => ver.value.current === 'dev')
 const checking = ref(false)
 const notice = ref('')
 const showConfirm = ref(false)
+const showUpToDate = ref(false)
 const updating = ref(false)
 const updateStep = ref('Updating…')
 const updateError = ref('')
@@ -130,16 +143,15 @@ const updateLabel = computed(() => {
   if (isDev.value) return 'Update'
   if (checking.value) return 'Checking…'
   if (ver.value.available) return 'Update to ' + ver.value.latest
-  return 'Check for updates'
+  return 'Check'
 })
 
 async function onUpdateClick() {
-  notice.value = ''
   checking.value = true
   try { ver.value = await getVersion(true) } catch (e) { /* keep last known */ }
   checking.value = false
   if (ver.value.available) showConfirm.value = true
-  else notice.value = "you're on the latest version"
+  else showUpToDate.value = true
 }
 
 async function confirmUpdate() {
