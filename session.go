@@ -550,9 +550,13 @@ func (s *Session) apiClear(c echo.Context) error {
 
 // apiCompact asks the agent to summarize and shrink its context. Unlike clear,
 // pulse's transcript is kept — the agent posts a compacted summary inline.
+// Claude raises a confirmation dialog first, same as /model and /effort.
 func (s *Session) apiCompact(c echo.Context) error {
 	if err := tmuxSendText(s.tmuxSession, "/compact"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if s.agent == "claude" {
+		s.confirmDialog()
 	}
 	return c.NoContent(http.StatusOK)
 }

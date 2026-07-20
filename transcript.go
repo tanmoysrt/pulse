@@ -47,11 +47,12 @@ type taskOp struct {
 }
 
 type transcriptLine struct {
-	Type        string `json:"type"`
-	IsMeta      bool   `json:"isMeta"`
-	IsSidechain bool   `json:"isSidechain"`
-	AiTitle     string `json:"aiTitle"`
-	Message     struct {
+	Type             string `json:"type"`
+	IsMeta           bool   `json:"isMeta"`
+	IsSidechain      bool   `json:"isSidechain"`
+	IsCompactSummary bool   `json:"isCompactSummary"`
+	AiTitle          string `json:"aiTitle"`
+	Message          struct {
 		Role    string          `json:"role"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
@@ -180,6 +181,9 @@ func parseLine(lineNo int, raw []byte) parsed {
 		return parsed{}
 	}
 	role, model := tl.Message.Role, tl.Message.Model
+	if tl.IsCompactSummary {
+		role = "assistant" // it's the agent's own summary, despite the "user" role Claude gives it
+	}
 
 	var s string
 	if err := json.Unmarshal(tl.Message.Content, &s); err == nil {
