@@ -35,7 +35,12 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const shadow = ref(false)
 
-function goHome() { router.push('/') }
+// See Session.vue's goHome: pop real history instead of always pushing a
+// fresh Home entry, so the back stack doesn't grow unbounded.
+function goHome() {
+  if (window.history.state && window.history.state.back) router.back()
+  else router.push('/')
+}
 
 async function onResume() {
   try {

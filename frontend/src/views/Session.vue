@@ -79,7 +79,15 @@ const shadow = ref(false)
 
 const showEmpty = computed(() => !state.closed && !state.messages.length && !isBusy.value)
 
-function goHome() { router.push('/') }
+// Pop back into real history when we got here by pushing from somewhere (the
+// normal case), so the back stack doesn't grow unbounded — otherwise a second
+// back later resurfaces whatever chat used to be behind this one instead of
+// exiting. Only push fresh when there's nothing to pop (e.g. opened directly
+// from a notification with no prior page in this session).
+function goHome() {
+  if (window.history.state && window.history.state.back) router.back()
+  else router.push('/')
+}
 function onClear() {
   if (!window.confirm('Clear this chat? This cannot be undone.')) return
   clear()

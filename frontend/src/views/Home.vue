@@ -24,27 +24,32 @@
       </button>
     </div>
 
-    <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
-      <template #default="{ item }">
-        <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
-        <button v-else class="card" :class="{ flat: !item.live }" @click="open(item.s, item.live)">
-          <div class="agent-badge" :class="'agent-' + item.s.tool">
-            <AgentLogo :tool="item.s.tool" />
-            <span v-if="item.live" class="live-corner" title="Live"></span>
-          </div>
-          <div class="card-main">
-            <div class="card-title">{{ cardTitle(item.s) }}</div>
-            <div class="card-sub">{{ item.s.dir }}</div>
-          </div>
-          <div class="card-meta">
-            <span class="card-time">{{ timeAgo(item.s.updated) }}</span>
-          </div>
-        </button>
-      </template>
-    </VirtualList>
-    <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
-    <div v-else-if="query" class="home-list home-empty"><h2>No matches</h2><p>Nothing matches “{{ query }}”.</p></div>
-    <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Tap the button below to start one.</p></div>
+    <div ref="scrollWrap" class="home-scroll">
+      <div class="ptr" :class="{ ready: pullReady, spin: refreshingList }" :style="ptrStyle">
+        <Icon name="rotate-cw" :size="15" />
+      </div>
+      <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
+        <template #default="{ item }">
+          <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
+          <button v-else class="card" :class="{ flat: !item.live }" @click="open(item.s, item.live)">
+            <div class="agent-badge" :class="'agent-' + item.s.tool">
+              <AgentLogo :tool="item.s.tool" />
+              <span v-if="item.live" class="live-corner" title="Live"></span>
+            </div>
+            <div class="card-main">
+              <div class="card-title">{{ cardTitle(item.s) }}</div>
+              <div class="card-sub">{{ item.s.dir }}</div>
+            </div>
+            <div class="card-meta">
+              <span class="card-time">{{ timeAgo(item.s.updated) }}</span>
+            </div>
+          </button>
+        </template>
+      </VirtualList>
+      <div v-else-if="error" class="home-list home-empty"><h2>Can’t reach pulse</h2><p>Is the daemon still running?</p></div>
+      <div v-else-if="query" class="home-list home-empty"><h2>No matches</h2><p>Nothing matches “{{ query }}”.</p></div>
+      <div v-else-if="loaded" class="home-list home-empty"><h2>No sessions yet</h2><p>Tap the button below to start one.</p></div>
+    </div>
 
     <button class="fab" title="New chat" aria-label="New chat" @click="showModal = true">
       <Icon name="plus" :size="22" />
@@ -65,6 +70,7 @@ import { AGENT_LABELS } from '../constants'
 import { baseName, timeAgo, dateBucket } from '../lib/format'
 import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
 import { deferredPrompt, isStandalone, isIOSSafari, promptInstall } from '../lib/install'
+import { usePullToRefresh } from '../composables/usePullToRefresh'
 import NewChatModal from '../components/NewChatModal.vue'
 import SettingsSheet from '../components/SettingsSheet.vue'
 import NotifyPrompt from '../components/NotifyPrompt.vue'
@@ -186,13 +192,34 @@ function onStarted(d) {
   router.push({ path: '/s/' + d.id, query: { a: d.agent } })
 }
 
-onMounted(async () => {
+async function loadSessions() {
   try {
     const d = await listSessions()
     live.value = d.live || []
     history.value = d.history || []
     installed.value = d.installed || []
+    error.value = false
   } catch (e) { error.value = true }
+}
+
+// Pull-to-refresh: delegated from the always-present scroll wrapper down to
+// whichever of VirtualList/empty-state div is actually rendered and scrolled
+// (see the composable). A short minimum delay keeps the spinner from just
+// flashing when the fetch is near-instant.
+const scrollWrap = ref(null)
+const { distance: pullDistance, refreshing: refreshingList, ready: pullReady } = usePullToRefresh(
+  scrollWrap,
+  () => Promise.all([loadSessions(), new Promise((r) => setTimeout(r, 400))]),
+  '.vlist, .home-empty',
+)
+const ptrStyle = computed(() => {
+  if (refreshingList.value) return { opacity: 1 }
+  const t = Math.min(1, pullDistance.value / 40)
+  return { opacity: t, transform: `translateX(-50%) translateY(${Math.min(pullDistance.value, 50)}px) rotate(${pullDistance.value * 3}deg)` }
+})
+
+onMounted(async () => {
+  await loadSessions()
   loaded.value = true
   if (pushSup) {
     const reg = await existingSubscription().catch(() => null)
