@@ -271,8 +271,10 @@ func (m wizModel) renderChoices(choices []choice) string {
 }
 
 // renderSummary keeps the connection details beside the QR so both scan and
-// command options are visible without scrolling.
-func renderSummary(urls []string, qr string) string {
+// command options are visible without scrolling. footer is the closing dim
+// line — "Ctrl-C quits" while attached, something else when just reprinting
+// status for an already-running daemon.
+func renderSummary(urls []string, qr, footer string) string {
 	left := strings.Builder{}
 	left.WriteString(pulseWordmark())
 	left.WriteString("\n\n")
@@ -287,7 +289,7 @@ func renderSummary(urls []string, qr string) string {
 	left.WriteString(dimStyle.Render("Commands:"))
 	left.WriteString("\n")
 	left.WriteString("- pulse claude\n- pulse opencode\n- pulse codex\n- pulse ls\n- pulse attach <id>\n- pulse update\n- pulse version\n\n")
-	left.WriteString(dimStyle.Render("Ctrl-C quits"))
+	left.WriteString(dimStyle.Render(footer))
 
 	if qr == "" {
 		return "\n" + left.String() + "\n"

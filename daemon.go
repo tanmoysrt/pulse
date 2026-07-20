@@ -36,6 +36,8 @@ type Daemon struct {
 	pushSubs         []pushSub
 	port             int
 	awake            *sleepInhibitor
+	urls             []string // reachable URLs, resolved once at startup (includes tunnel URL if any)
+	primary          string   // the one urls entry the QR/status view leads with
 }
 
 func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
@@ -311,6 +313,18 @@ type listItem struct {
 	Updated int64  `json:"updated"`
 }
 
+// apiStatus lets a separate `pulse` invocation reprint the exact banner a
+// live daemon started with (including a fresh QR for the still-valid
+// bootstrap link, and the tunnel URL if one is running — neither is ever
+// persisted to disk, only known in-process).
+func (d *Daemon) apiStatus(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]any{
+		"urls":      d.urls,
+		"primary":   d.primary,
+		"bootstrap": d.currentBootstrap(),
+	})
+}
+
 func (d *Daemon) apiList(c echo.Context) error {
 	d.mu.Lock()
 	live := make([]listItem, 0, len(d.sessions))
@@ -405,7 +419,7 @@ func (d *Daemon) withSession(h func(*Session, echo.Context) error) echo.HandlerF
 	}
 }
 
-func startServer(d *Daemon, ln net.Listener) {
+func startServer(d *Daemon, ln net.Listener) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -431,6 +445,7 @@ func startServer(d *Daemon, ln net.Listener) {
 	e.GET("/api/dirs", d.apiDirs)
 	e.GET("/api/stats", d.apiStats)
 	e.GET("/api/version", d.apiVersion)
+	e.GET("/api/status", d.apiStatus)
 	e.GET("/api/push/key", d.apiPushKey)
 	e.POST("/api/push/subscribe", d.apiPushSubscribe)
 
@@ -473,6 +488,7 @@ func startServer(d *Daemon, ln net.Listener) {
 			fmt.Println("pulse: server error:", err)
 		}
 	}()
+	return e
 }
 
 // daemonState lets a `pulse <agent>` client find the daemon's port and token.

@@ -13,11 +13,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/labstack/echo/v4"
 )
 
 var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
@@ -25,6 +28,15 @@ var validAgents = map[string]bool{"claude": true, "codex": true, "opencode": tru
 const defaultPort = 4444
 
 const installScriptURL = "https://raw.githubusercontent.com/tanmoysrt/pulse/master/install.sh"
+
+// daemonResumeEnv and friends are internal parent->child signaling for
+// runDetach's re-exec, not documented user flags — same convention as the
+// PULSE_PORT env var passed into agent tmux sessions.
+const (
+	daemonResumeEnv         = "PULSE_DAEMON_RESUME"
+	daemonResumeTokenEnv    = "PULSE_RESUME_TOKEN"
+	daemonResumePassHashEnv = "PULSE_RESUME_PWHASH"
+)
 
 // version is stamped at build time via -ldflags "-X main.version=..."; "dev"
 // for a plain `go build`.
@@ -50,12 +62,15 @@ func main() {
 			}
 			runAttach(args[1])
 			return
+		case "stop":
+			runStop()
+			return
 		}
 	}
 	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id> | pulse update")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id> | pulse stop | pulse update")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
@@ -64,6 +79,10 @@ func main() {
 	if err := checkRequirements(); err != nil {
 		fmt.Fprintln(os.Stderr, "pulse:", err)
 		os.Exit(1)
+	}
+	if st, err := readState(); err == nil && processAlive(st.PID) {
+		printStatus(st)
+		return
 	}
 	runDaemon(o)
 }
@@ -198,25 +217,39 @@ func runClient(agent string, agentArgs []string) {
 }
 
 func runDaemon(o opts) {
-	o = runWizard(o) // interactive prompts for anything not fixed by a flag
+	resumeToken := os.Getenv(daemonResumeTokenEnv)
+	resuming := os.Getenv(daemonResumeEnv) == "1" && resumeToken != ""
+
+	if !resuming {
+		o = runWizard(o) // interactive prompts for anything not fixed by a flag
+	}
 
 	bindHost := ""
 	if o.local {
 		bindHost = "127.0.0.1"
 	}
-	token := randomToken()
-	passwordHash := o.passwordHash
-	if passwordHash == "" {
-		password := strings.TrimSpace(o.password)
-		if password == "" {
-			fmt.Fprintln(os.Stderr, "pulse: a login password is required")
-			return
-		}
-		var err error
-		passwordHash, err = hashPassword(password)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "pulse: could not secure password:", err)
-			return
+
+	var token, passwordHash string
+	if resuming {
+		// Re-exec'd by runDetach: reuse the live token/hash so already-issued
+		// session cookies and the hook-auth token stay valid across the move
+		// to the background.
+		token, passwordHash = resumeToken, os.Getenv(daemonResumePassHashEnv)
+	} else {
+		token = randomToken()
+		passwordHash = o.passwordHash
+		if passwordHash == "" {
+			password := strings.TrimSpace(o.password)
+			if password == "" {
+				fmt.Fprintln(os.Stderr, "pulse: a login password is required")
+				return
+			}
+			var err error
+			passwordHash, err = hashPassword(password)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "pulse: could not secure password:", err)
+				return
+			}
 		}
 	}
 
@@ -231,18 +264,178 @@ func runDaemon(o opts) {
 	d.reconcile()
 	d.startSleepInhibitor()
 	go d.stats.collect()
-	startServer(d, ln)
-	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
 
 	urls, primary := resolveURLs(o, port)
+	d.urls, d.primary = urls, primary // exposed via /api/status so a later `pulse` can reprint this exact banner
+
+	e := startServer(d, ln)
+	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
+
 	shown := daemonBanner(d, urls, primary)
 	fmt.Print(shown)
+	fmt.Println(dimStyle.Render(`type "bg" + Enter to move to the background`))
 	go watchBootstrapRotation(d, urls, primary, shown)
 
+	bg := make(chan struct{})
+	go watchDetach(bg)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	<-ctx.Done()
-	stop() // restore default handler so a second Ctrl-C force-quits
-	handleShutdown(d)
+	select {
+	case <-ctx.Done():
+		stop() // restore default handler so a second Ctrl-C force-quits
+		handleShutdown(d)
+	case <-bg:
+		stop()
+		runDetach(d, o, port, token, passwordHash, e)
+	}
+}
+
+// watchDetach reads lines from stdin and signals bg when it sees "bg". Only
+// meaningful with a real terminal attached; a closed/non-tty stdin just
+// makes the read loop exit without ever firing.
+func watchDetach(bg chan<- struct{}) {
+	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return
+	}
+	r := bufio.NewReader(os.Stdin)
+	for {
+		line, err := r.ReadString('\n')
+		if strings.ToLower(strings.TrimSpace(line)) == "bg" {
+			close(bg)
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// runDetach persists session state, stops the HTTP server, and re-execs the
+// daemon as a fully detached process (new session, output to a log file) so
+// it survives the terminal closing. The port is freed before the child binds
+// so it deterministically reclaims the same one — no fd-passing needed.
+func runDetach(d *Daemon, o opts, port int, token, passwordHash string, e *echo.Echo) {
+	fmt.Println("\npulse: moving to background…")
+	d.persist()
+	d.stopSleepInhibitor()
+	removeState()
+	e.Shutdown(context.Background())
+
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not locate own executable:", err)
+		os.Exit(1)
+	}
+	logPath := filepath.Join(filepath.Dir(statePath()), "daemon.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not open log file:", err)
+		os.Exit(1)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command(exe, detachArgs(o, port)...)
+	cmd.Env = append(os.Environ(),
+		daemonResumeEnv+"=1",
+		daemonResumeTokenEnv+"="+token,
+		daemonResumePassHashEnv+"="+passwordHash)
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not move to background:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("pulse: running in background (pid %d)\n  logs:   %s\n  status: pulse\n  stop:   pulse stop\n", cmd.Process.Pid, logPath)
+}
+
+// detachArgs rebuilds the resolved flags for runDetach's re-exec so the
+// backgrounded daemon boots with identical config and skips the wizard.
+func detachArgs(o opts, port int) []string {
+	args := []string{"--listen-port", strconv.Itoa(port)}
+	switch {
+	case o.local:
+		args = append(args, "--local")
+	case o.tunnel:
+		args = append(args, "--tunnel")
+	default:
+		args = append(args, "--lan")
+	}
+	if o.localNotify {
+		args = append(args, "--notify")
+	}
+	return args
+}
+
+// processAlive reports whether pid names a live process (Unix liveness
+// probe: os.FindProcess always succeeds, so the signal is the real check).
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+// printStatus reprints the running daemon's own startup banner — same URLs,
+// same still-valid QR — by asking it directly instead of starting a second
+// daemon. Pulled live from /api/status rather than reconstructed locally
+// since the tunnel URL and bootstrap token are only ever known in-process,
+// never persisted to daemon.json.
+func printStatus(st *daemonState) {
+	urls, primary, bootstrap, err := fetchStatus(st)
+	if err != nil {
+		fmt.Printf("pulse: already running (pid %d) but unreachable: %v\n", st.PID, err)
+		return
+	}
+	footer := fmt.Sprintf("pid %d · stop: pulse stop", st.PID)
+	fmt.Print(renderSummary(urls, qrOf(withToken(primary, bootstrap)), footer))
+}
+
+// fetchStatus asks a running daemon for the banner data it resolved at
+// startup (urls/primary/bootstrap — see Daemon.apiStatus).
+func fetchStatus(st *daemonState) (urls []string, primary, bootstrap string, err error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/status", st.Port)
+	if st.Token != "" {
+		url += "?t=" + st.Token
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		URLs      []string `json:"urls"`
+		Primary   string   `json:"primary"`
+		Bootstrap string   `json:"bootstrap"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, "", "", err
+	}
+	return out.URLs, out.Primary, out.Bootstrap, nil
+}
+
+// runStop signals a running daemon to shut down and waits for it to exit.
+func runStop() {
+	st, err := readState()
+	if err != nil || !processAlive(st.PID) {
+		fmt.Fprintln(os.Stderr, "pulse: no daemon running")
+		os.Exit(1)
+	}
+	proc, _ := os.FindProcess(st.PID)
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not stop daemon:", err)
+		os.Exit(1)
+	}
+	fmt.Print("pulse: stopping…")
+	deadline := time.Now().Add(10 * time.Second)
+	for processAlive(st.PID) && time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+	}
+	if processAlive(st.PID) {
+		fmt.Printf("\npulse: still running after 10s (pid %d)\n", st.PID)
+		os.Exit(1)
+	}
+	fmt.Println(" stopped")
 }
 
 // handleShutdown asks whether to stop running sessions before exiting. Sessions
@@ -319,7 +512,7 @@ func resolveURLs(o opts, port int) (urls []string, primary string) {
 
 // daemonBanner is the startup screen: the URL list and its QR.
 func daemonBanner(d *Daemon, urls []string, primary string) string {
-	return renderSummary(urls, qrOf(withToken(primary, d.currentBootstrap())))
+	return renderSummary(urls, qrOf(withToken(primary, d.currentBootstrap())), "Ctrl-C quits")
 }
 
 // watchBootstrapRotation redraws the QR whenever its token rotates.
