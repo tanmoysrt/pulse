@@ -52,20 +52,23 @@
 
     <NewChatModal v-if="showModal" :installed="installed" @close="showModal = false" @started="onStarted" />
     <SettingsSheet v-if="showSettings" :push-supported="pushSup" :push-on="pushOn" @close="showSettings = false" @toggle-push="toggleNotifs" />
-    <NotifyPrompt v-if="showNotifyPrompt" @enable="promptEnable" @dismiss="promptDismiss" />
+    <InstallPrompt v-if="showInstallPrompt" :ios="installIsIOS" @install="doInstall" @dismiss="dismissInstall" />
+    <NotifyPrompt v-else-if="showNotifyPrompt" @enable="promptEnable" @dismiss="promptDismiss" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSessions } from '../lib/api'
 import { AGENT_LABELS } from '../constants'
 import { baseName, timeAgo, dateBucket } from '../lib/format'
 import { pushSupported, existingSubscription, enablePush, disablePush } from '../lib/push'
+import { deferredPrompt, isStandalone, isIOSSafari, promptInstall } from '../lib/install'
 import NewChatModal from '../components/NewChatModal.vue'
 import SettingsSheet from '../components/SettingsSheet.vue'
 import NotifyPrompt from '../components/NotifyPrompt.vue'
+import InstallPrompt from '../components/InstallPrompt.vue'
 import AgentLogo from '../components/AgentLogo.vue'
 import Icon from '../components/Icon.vue'
 import VirtualList from '../components/VirtualList.vue'
@@ -111,9 +114,36 @@ async function toggleNotifs() {
   }
 }
 
-function dismissPrompt() { localStorage.setItem('pulse.notifPrompt', '1'); showNotifyPrompt.value = false }
+function dismissPrompt() { localStorage.setItem('pulse.notifPrompt', '1'); showNotifyPrompt.value = false; maybeOfferInstall() }
 async function promptEnable() { dismissPrompt(); await toggleNotifs() }
 function promptDismiss() { dismissPrompt() }
+
+function maybeShowNotify() {
+  if (pushSup && !pushOn.value && !error.value && !localStorage.getItem('pulse.notifPrompt')) showNotifyPrompt.value = true
+}
+
+// "Add to home screen": only ever over HTTPS, and only Chrome/Android (which
+// fires beforeinstallprompt, often after this component has already mounted)
+// or iOS Safari (which never fires it — manual Share-sheet instructions only).
+const showInstallPrompt = ref(false)
+const installIsIOS = ref(false)
+
+function maybeOfferInstall() {
+  if (!window.isSecureContext || isStandalone.value || showNotifyPrompt.value) return false
+  if (localStorage.getItem('pulse.installPrompt')) return false
+  if (isIOSSafari()) { installIsIOS.value = true; showInstallPrompt.value = true; return true }
+  if (deferredPrompt.value) { installIsIOS.value = false; showInstallPrompt.value = true; return true }
+  return false
+}
+watch(deferredPrompt, () => maybeOfferInstall())
+
+function dismissInstall() { localStorage.setItem('pulse.installPrompt', '1'); showInstallPrompt.value = false; maybeShowNotify() }
+async function doInstall() {
+  await promptInstall()
+  localStorage.setItem('pulse.installPrompt', '1')
+  showInstallPrompt.value = false
+  maybeShowNotify()
+}
 
 const cardTitle = (s) => s.title || baseName(s.dir) || AGENT_LABELS[s.tool] || 'Session'
 
@@ -167,8 +197,10 @@ onMounted(async () => {
   if (pushSup) {
     const reg = await existingSubscription().catch(() => null)
     if (reg) { pushReg = reg; pushOn.value = true }
-    // First run: offer to turn notifications on, but only ask once ever.
-    else if (!error.value && !localStorage.getItem('pulse.notifPrompt')) showNotifyPrompt.value = true
   }
+  // Install takes priority (Chrome's beforeinstallprompt may not have fired
+  // yet, in which case the watcher above picks it up later); notifications
+  // only get offered once there's nothing to install.
+  if (!maybeOfferInstall()) maybeShowNotify()
 })
 </script>

@@ -27,6 +27,7 @@ const (
 // its static companions, and the login/logout endpoints.
 var publicPaths = map[string]bool{
 	"/": true, "/sw.js": true, "/manifest.webmanifest": true, "/api/login": true, "/api/logout": true,
+	"/icons/icon-192.png": true, "/icons/icon-512.png": true, "/icons/apple-touch-icon.png": true,
 }
 
 // randomToken returns a URL-safe random secret used to gate access to the UI.

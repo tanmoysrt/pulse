@@ -10,3 +10,12 @@ var swJS []byte
 
 //go:embed frontend/public/manifest.webmanifest
 var manifestJSON []byte
+
+//go:embed frontend/public/icons/icon-192.png
+var icon192PNG []byte
+
+//go:embed frontend/public/icons/icon-512.png
+var icon512PNG []byte
+
+//go:embed frontend/public/icons/apple-touch-icon.png
+var appleTouchIconPNG []byte
