@@ -54,29 +54,35 @@ func writeFakeCert(t *testing.T, target string, notAfter time.Time) {
 	}
 }
 
-func TestExposeStepChoosingAcmeInsertsDomainStep(t *testing.T) {
+func TestExposeStepSelectingRegisteredDomainSetsAcme(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
+
 	m := wizModel{
 		steps:  []string{"expose", "password", "notify"},
-		cursor: 2, // "Let's Encrypt"
+		cursor: 2, // first (only) registered domain
 		input:  newWizardInput(),
 	}
 
 	next, _ := m.commit()
 	m = next.(wizModel)
 
-	want := []string{"expose", "domain", "password", "notify"}
+	want := []string{"expose", "password", "notify"}
 	if !reflect.DeepEqual(m.steps, want) {
-		t.Fatalf("steps = %v, want %v", m.steps, want)
+		t.Fatalf("steps = %v, want %v (no separate domain step anymore)", m.steps, want)
 	}
 	if !m.o.acme {
 		t.Fatal("o.acme = false, want true")
 	}
-	if got := m.step(); got != "domain" {
-		t.Fatalf("step = %q, want domain", got)
+	if m.o.domain != "example.com" {
+		t.Fatalf("o.domain = %q, want example.com", m.o.domain)
+	}
+	if got := m.step(); got != "password" {
+		t.Fatalf("step = %q, want password", got)
 	}
 }
 
-func TestExposeStepChoosingLanSkipsDomainStep(t *testing.T) {
+func TestExposeStepChoosingLanSkipsAcme(t *testing.T) {
 	m := wizModel{
 		steps:  []string{"expose", "password"},
 		cursor: 0, // "Local network"
@@ -95,21 +101,41 @@ func TestExposeStepChoosingLanSkipsDomainStep(t *testing.T) {
 	}
 }
 
-func TestDomainStepPrefillsCursorFromSavedSetup(t *testing.T) {
+func TestExposeStepPrefillsCursorFromSavedDomain(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
 	writeFakeCert(t, "other.example.com", time.Now().Add(60*24*time.Hour))
 
 	m := wizModel{
-		steps: []string{"domain"},
+		steps: []string{"expose"},
 		input: newWizardInput(),
-		saved: &setupRecord{Domain: "other.example.com"},
+		saved: &setupRecord{Acme: true, Domain: "other.example.com"},
 	}
 	m.focusStep()
 
 	doms := registeredDomains()
-	if doms[m.cursor].Target != "other.example.com" {
-		t.Fatalf("cursor landed on %q, want other.example.com", doms[m.cursor].Target)
+	want := -1
+	for i, d := range doms {
+		if d.Target == "other.example.com" {
+			want = i + 2
+		}
+	}
+	if m.cursor != want {
+		t.Fatalf("cursor = %d, want %d (other.example.com's position)", m.cursor, want)
+	}
+}
+
+func TestExposeMaxCursorExcludesUnregisteredDomains(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	m := wizModel{steps: []string{"expose"}, input: newWizardInput()}
+	if got := m.maxCursor(); got != 1 {
+		t.Fatalf("maxCursor with nothing registered = %d, want 1", got)
+	}
+
+	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
+	if got := m.maxCursor(); got != 2 {
+		t.Fatalf("maxCursor with one registered domain = %d, want 2", got)
 	}
 }
 
@@ -147,32 +173,6 @@ func TestCertNameSanitizesTarget(t *testing.T) {
 func TestRenewalWindow(t *testing.T) {
 	if renewalWindow(true) >= renewalWindow(false) {
 		t.Fatal("IP renewal window should be shorter than domain renewal window")
-	}
-}
-
-func TestDomainStepRequiresARegisteredDomain(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	m := wizModel{steps: []string{"domain"}, input: newWizardInput()}
-	next, _ := m.commit()
-	m = next.(wizModel)
-
-	if m.error == "" {
-		t.Fatal("expected an error when no domain is registered")
-	}
-	if m.step() != "domain" {
-		t.Fatal("should not advance past domain with nothing registered")
-	}
-
-	writeFakeCert(t, "example.com", time.Now().Add(60*24*time.Hour))
-
-	next, _ = m.commit()
-	m = next.(wizModel)
-	if m.error != "" {
-		t.Fatalf("unexpected error once a domain is registered: %v", m.error)
-	}
-	if m.o.domain != "example.com" {
-		t.Fatalf("o.domain = %q, want example.com", m.o.domain)
 	}
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -25,17 +24,30 @@ type choice struct {
 	desc  string
 }
 
-var (
-	exposeChoices = []choice{
+var notifyChoices = []choice{
+	{"Off", "no desktop pop-ups on this machine"},
+	{"On", "pop up a desktop notification when an agent needs you"},
+}
+
+// exposeChoices lists how pulse can be reached: the two fixed choices, plus
+// one per domain/IP "pulse add-domain" has already issued a certificate for
+// — recommended for a VPS. Selecting one of those picks it directly; there's
+// no separate step, since a domain either has a certificate ready or it
+// isn't offered here yet.
+func exposeChoices(doms []registeredDomain) []choice {
+	choices := []choice{
 		{"Local network", "reachable by other devices on your Wi-Fi / LAN"},
 		{"Public tunnel", "a public https link, reachable from anywhere"},
-		{"Let's Encrypt", "a trusted HTTPS cert on your own domain or IP — recommended for a VPS"},
 	}
-	notifyChoices = []choice{
-		{"Off", "no desktop pop-ups on this machine"},
-		{"On", "pop up a desktop notification when an agent needs you"},
+	for _, d := range doms {
+		status := "valid until " + d.NotAfter.Format("2006-01-02")
+		if d.Expired {
+			status = "expired " + d.NotAfter.Format("2006-01-02") + ", renew: pulse add-domain " + d.Target
+		}
+		choices = append(choices, choice{d.Target, "Let's Encrypt: " + status})
 	}
-)
+	return choices
+}
 
 // runWizard interactively confirms saved setup or fills choices not fixed by flags.
 // Non-interactive runs reuse saved setup and otherwise keep flag values/defaults.
@@ -154,16 +166,20 @@ func (m *wizModel) focusStep() {
 	case "password":
 		m.input.Placeholder = "required"
 		m.input.Focus()
-	case "domain":
-		// Auto-fill: land on the previously used domain, not the top of the list.
+	case "expose":
+		// Auto-fill: land on the previously used choice, not the top of the list.
 		if m.saved == nil {
 			break
 		}
-		for i, d := range registeredDomains() {
-			if d.Target == m.saved.Domain {
-				m.cursor = i
-				break
+		if m.saved.Acme {
+			for i, d := range registeredDomains() {
+				if d.Target == m.saved.Domain {
+					m.cursor = i + 2
+					break
+				}
 			}
+		} else if m.saved.Tunnel {
+			m.cursor = 1
 		}
 	default:
 		m.input.Blur()
@@ -180,14 +196,8 @@ func (m wizModel) isTextStep() bool {
 
 // maxCursor is the highest selectable choice index for the current step.
 func (m wizModel) maxCursor() int {
-	switch m.step() {
-	case "expose":
-		return len(exposeChoices) - 1
-	case "domain":
-		if n := len(registeredDomains()); n > 0 {
-			return n - 1
-		}
-		return 0
+	if m.step() == "expose" {
+		return len(exposeChoices(registeredDomains())) - 1
 	}
 	return 1
 }
@@ -236,18 +246,16 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 		m.focusStep()
 		return m, textinput.Blink
 	case "expose":
-		m.o.tunnel = m.cursor == 1
-		m.o.acme = m.cursor == 2
-		if m.o.acme {
-			m.steps = insertDomainStep(m.steps, m.i)
-		}
-	case "domain":
 		doms := registeredDomains()
-		if len(doms) == 0 {
-			m.error = "No domains registered yet — run: pulse add-domain <target>, then restart setup."
-			return m, nil
+		switch {
+		case m.cursor == 1:
+			m.o.tunnel, m.o.acme = true, false
+		case m.cursor >= 2:
+			m.o.tunnel, m.o.acme = false, true
+			m.o.domain = doms[m.cursor-2].Target
+		default:
+			m.o.tunnel, m.o.acme = false, false
 		}
-		m.o.domain = doms[m.cursor].Target
 	case "password":
 		m.o.password = strings.TrimSpace(m.input.Value())
 		if m.o.password == "" {
@@ -265,17 +273,6 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 	return m, textinput.Blink
 }
 
-// insertDomainStep adds a "domain" step right after index i, unless it's
-// already there (e.g. the user flipped between expose choices).
-func insertDomainStep(steps []string, i int) []string {
-	if slices.Contains(steps, "domain") {
-		return steps
-	}
-	out := append([]string{}, steps[:i+1]...)
-	out = append(out, "domain")
-	return append(out, steps[i+1:]...)
-}
-
 func (m wizModel) View() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n%s\n\n", pulseWordmark(), dimStyle.Render(fmt.Sprintf("setup · %d of %d", m.i+1, len(m.steps))))
@@ -288,19 +285,7 @@ func (m wizModel) View() string {
 	case "expose":
 		b.WriteString(titleStyle.Render("How should pulse be reachable?"))
 		b.WriteString("\n\n")
-		b.WriteString(m.renderChoices(exposeChoices))
-	case "domain":
-		b.WriteString(titleStyle.Render("Which domain or IP should pulse serve?"))
-		b.WriteString("\n")
-		doms := registeredDomains()
-		if len(doms) == 0 {
-			b.WriteString(dimStyle.Render("No domains registered yet — run: pulse add-domain <target>"))
-			b.WriteString("\n")
-		} else {
-			b.WriteString(dimStyle.Render("TLS status is shown next to each one."))
-			b.WriteString("\n\n")
-			b.WriteString(m.renderChoices(domainChoices(doms)))
-		}
+		b.WriteString(m.renderChoices(exposeChoices(registeredDomains())))
 	case "password":
 		b.WriteString(titleStyle.Render("Set a login password"))
 		b.WriteString("\n")
@@ -321,19 +306,6 @@ func (m wizModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render("↑/↓ move · enter confirm · esc cancel"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
-}
-
-// domainChoices renders each registered domain alongside its TLS status.
-func domainChoices(doms []registeredDomain) []choice {
-	choices := make([]choice, len(doms))
-	for i, d := range doms {
-		desc := "valid until " + d.NotAfter.Format("2006-01-02")
-		if d.Expired {
-			desc = "expired " + d.NotAfter.Format("2006-01-02") + " — renew: pulse add-domain " + d.Target
-		}
-		choices[i] = choice{d.Target, desc}
-	}
-	return choices
 }
 
 func (m wizModel) renderChoices(choices []choice) string {

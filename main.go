@@ -282,11 +282,11 @@ func runDaemon(o opts) {
 	if o.acme {
 		cert, err := loadCert(o.domain)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "pulse: no certificate for "+o.domain+" yet — run: pulse add-domain "+o.domain)
+			fmt.Fprintln(os.Stderr, "pulse: no certificate for "+o.domain+" yet, run: pulse add-domain "+o.domain)
 			return
 		}
 		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil && time.Now().After(leaf.NotAfter) {
-			fmt.Printf("pulse: certificate for %s expired on %s — serving it anyway; renew with: pulse add-domain %s\n", o.domain, leaf.NotAfter.Format("2006-01-02"), o.domain)
+			fmt.Printf("pulse: certificate for %s expired on %s, serving it anyway; renew with: pulse add-domain %s\n", o.domain, leaf.NotAfter.Format("2006-01-02"), o.domain)
 		}
 		tlsCert = cert
 	}

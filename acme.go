@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -119,21 +121,6 @@ func loadValidCert(target string) (*tls.Certificate, bool) {
 	return pair, true
 }
 
-// ensureCertificate returns a valid certificate for target, reusing one
-// already on disk when it isn't close to expiry, else validating that
-// target actually points here and issuing a fresh one through Let's Encrypt.
-// Only "pulse add-domain" calls this — the daemon itself only ever reads
-// whatever this last produced, via loadCert.
-func ensureCertificate(target string) (*tls.Certificate, error) {
-	if cert, ok := loadValidCert(target); ok {
-		return cert, nil
-	}
-	if err := validateExposeTarget(target); err != nil {
-		return nil, err
-	}
-	return issueCertificate(target)
-}
-
 // validateExposeTarget confirms target (a domain or IP) actually resolves to
 // this machine before we ask Let's Encrypt for a certificate — a typo'd
 // domain or a stale/missing DNS record would otherwise fail validation on
@@ -151,13 +138,13 @@ func validateExposeTarget(target string) error {
 	}
 	ips, err := net.LookupHost(target)
 	if err != nil {
-		return fmt.Errorf("could not resolve %q — check the domain and its DNS record", target)
+		return fmt.Errorf("could not resolve %q, check the domain and its DNS record", target)
 	}
 	if pubErr != nil {
 		return nil
 	}
 	if !slices.Contains(ips, pub) {
-		return fmt.Errorf("%s resolves to %s, not this machine (%s) — update its DNS A record", target, strings.Join(ips, ", "), pub)
+		return fmt.Errorf("%s resolves to %s, not this machine (%s), update its DNS A record", target, strings.Join(ips, ", "), pub)
 	}
 	return nil
 }
@@ -291,23 +278,70 @@ func issueCertificate(target string) (*tls.Certificate, error) {
 // never does any of this at startup — see runDaemon's acme handling, which
 // only ever loads whatever this command last produced, expired or not.
 func runAddDomain(target string) {
+	ensureRoot()
+
 	if cert, ok := loadValidCert(target); ok {
 		leaf, _ := x509.ParseCertificate(cert.Certificate[0])
-		fmt.Printf("pulse: %s already has a valid certificate (until %s) — not reissuing\n", target, leaf.NotAfter.Format("2006-01-02"))
-		applyBindCapability()
+		fmt.Printf("pulse: %s already has a valid certificate (until %s), not reissuing\n", target, leaf.NotAfter.Format("2006-01-02"))
+	} else {
+		fmt.Printf("pulse: requesting a certificate for %s from Let's Encrypt…\n", target)
+		if err := validateExposeTarget(target); err != nil {
+			fmt.Fprintln(os.Stderr, "pulse:", err)
+			os.Exit(1)
+		}
+		if _, err := issueCertificate(target); err != nil {
+			fmt.Fprintln(os.Stderr, "pulse: could not obtain certificate:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("pulse: certificate ready for %s\n", target)
+	}
+
+	restoreOwnership()
+	applyBindCapability()
+}
+
+// ensureRoot re-execs pulse under sudo if it isn't already running as root:
+// issuing a certificate binds port 80 for the HTTP-01 challenge, and
+// applyBindCapability's setcap call needs root to grant a capability.
+func ensureRoot() {
+	if os.Geteuid() == 0 {
 		return
 	}
-	fmt.Printf("pulse: requesting a certificate for %s from Let's Encrypt…\n", target)
-	if err := validateExposeTarget(target); err != nil {
-		fmt.Fprintln(os.Stderr, "pulse:", err)
+	sudoPath, err := exec.LookPath("sudo")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: this command needs root (it binds port 80), install sudo or run as root")
 		os.Exit(1)
 	}
-	if _, err := issueCertificate(target); err != nil {
-		fmt.Fprintln(os.Stderr, "pulse: could not obtain certificate:", err)
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not locate own executable:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("pulse: certificate ready for %s\n", target)
-	applyBindCapability()
+	argv := append([]string{"sudo", exe}, os.Args[1:]...)
+	if err := syscall.Exec(sudoPath, argv, os.Environ()); err != nil {
+		fmt.Fprintln(os.Stderr, "pulse: could not elevate with sudo:", err)
+		os.Exit(1)
+	}
+}
+
+// restoreOwnership hands files written while elevated back to the user who
+// ran sudo (sudo sets SUDO_UID/SUDO_GID), so the unprivileged `pulse` daemon
+// can read its own certificates without needing root at every startup.
+func restoreOwnership() {
+	uid, err := strconv.Atoi(os.Getenv("SUDO_UID"))
+	if err != nil {
+		return // not invoked via sudo (already root) — nothing to hand back
+	}
+	gid, err := strconv.Atoi(os.Getenv("SUDO_GID"))
+	if err != nil {
+		return
+	}
+	filepath.Walk(acmeDir(), func(path string, _ os.FileInfo, err error) error {
+		if err == nil {
+			os.Chown(path, uid, gid)
+		}
+		return nil
+	})
 }
 
 // applyBindCapability grants pulse's own binary permission to bind ports
@@ -317,7 +351,7 @@ func runAddDomain(target string) {
 // any write to the file.
 func applyBindCapability() {
 	if runtime.GOOS != "linux" {
-		fmt.Println("pulse: on this OS, binding port 443 needs root — run pulse with sudo, or put it behind a reverse proxy")
+		fmt.Println("pulse: on this OS, binding port 443 needs root, run pulse with sudo, or put it behind a reverse proxy")
 		return
 	}
 	exe, err := os.Executable()
