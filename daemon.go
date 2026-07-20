@@ -42,6 +42,8 @@ type Daemon struct {
 	exePath          string   // resolved once at startup — see runDaemon's comment on why it's cached
 	restart          chan struct{}
 	restartOnce      sync.Once
+	certStore        *certStore // non-nil when serving over Let's Encrypt TLS
+	acmeDomain       string     // the domain/IP certStore's certificate covers
 }
 
 func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {

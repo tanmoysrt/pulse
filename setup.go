@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -28,6 +29,7 @@ var (
 	exposeChoices = []choice{
 		{"Local network", "reachable by other devices on your Wi-Fi / LAN"},
 		{"Public tunnel", "a public https link, reachable from anywhere"},
+		{"Let's Encrypt", "a trusted HTTPS cert on your own domain or IP — recommended for a VPS"},
 	}
 	notifyChoices = []choice{
 		{"Off", "no desktop pop-ups on this machine"},
@@ -93,7 +95,7 @@ func newWizardInput() textinput.Model {
 
 func setupSteps(o opts) []string {
 	var steps []string
-	if !o.local && !o.tunnelSet {
+	if !o.local && !o.tunnelSet && !o.acmeSet {
 		steps = append(steps, "expose")
 	}
 	if !o.passwordSet {
@@ -106,7 +108,7 @@ func setupSteps(o opts) []string {
 }
 
 func hasSetupOverrides(o opts) bool {
-	return o.local || o.tunnelSet || o.notifySet || o.passwordSet || o.portSet
+	return o.local || o.tunnelSet || o.acmeSet || o.notifySet || o.passwordSet || o.portSet
 }
 
 func applySavedSetup(o opts) opts {
@@ -118,8 +120,10 @@ func applySavedSetup(o opts) opts {
 }
 
 func applySetup(o opts, saved *setupRecord) opts {
-	if !o.local && !o.tunnelSet {
+	if !o.local && !o.tunnelSet && !o.acmeSet {
 		o.tunnel = saved.Tunnel
+		o.acme = saved.Acme
+		o.domain = saved.Domain
 	}
 	if !o.notifySet {
 		o.localNotify = saved.Notify
@@ -149,6 +153,12 @@ func (m *wizModel) focusStep() {
 	case "password":
 		m.input.Placeholder = "required"
 		m.input.Focus()
+	case "domain":
+		m.input.Placeholder = "your-domain.com or 203.0.113.5"
+		if m.saved != nil && m.saved.Domain != "" {
+			m.input.SetValue(m.saved.Domain)
+		}
+		m.input.Focus()
 	default:
 		m.input.Blur()
 	}
@@ -156,6 +166,20 @@ func (m *wizModel) focusStep() {
 }
 
 func (m wizModel) step() string { return m.steps[m.i] }
+
+// isTextStep reports whether the current step is a free-text input rather
+// than a list of choices — cursor movement and up/down navigation don't apply.
+func (m wizModel) isTextStep() bool {
+	return m.step() == "password" || m.step() == "domain"
+}
+
+// maxCursor is the highest selectable choice index for the current step.
+func (m wizModel) maxCursor() int {
+	if m.step() == "expose" {
+		return len(exposeChoices) - 1
+	}
+	return 1
+}
 
 func (m wizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
@@ -169,17 +193,17 @@ func (m wizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quit = true
 		return m, tea.Quit
 	case "up", "k":
-		if m.step() != "password" && m.cursor > 0 {
+		if !m.isTextStep() && m.cursor > 0 {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.step() != "password" && m.cursor < 1 {
+		if !m.isTextStep() && m.cursor < m.maxCursor() {
 			m.cursor++
 		}
 	case "enter":
 		return m.commit()
 	}
-	if m.step() == "password" {
+	if m.isTextStep() {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -202,6 +226,21 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "expose":
 		m.o.tunnel = m.cursor == 1
+		m.o.acme = m.cursor == 2
+		if m.o.acme {
+			m.steps = insertDomainStep(m.steps, m.i)
+		}
+	case "domain":
+		v := strings.TrimSpace(m.input.Value())
+		if v == "" {
+			m.error = "Enter the domain or IP this server is reachable at."
+			return m, nil
+		}
+		if err := validateExposeTarget(v); err != nil {
+			m.error = err.Error()
+			return m, nil
+		}
+		m.o.domain = v
 	case "password":
 		m.o.password = strings.TrimSpace(m.input.Value())
 		if m.o.password == "" {
@@ -219,6 +258,17 @@ func (m wizModel) commit() (tea.Model, tea.Cmd) {
 	return m, textinput.Blink
 }
 
+// insertDomainStep adds a "domain" step right after index i, unless it's
+// already there (e.g. the user flipped between expose choices).
+func insertDomainStep(steps []string, i int) []string {
+	if slices.Contains(steps, "domain") {
+		return steps
+	}
+	out := append([]string{}, steps[:i+1]...)
+	out = append(out, "domain")
+	return append(out, steps[i+1:]...)
+}
+
 func (m wizModel) View() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n%s\n\n", pulseWordmark(), dimStyle.Render(fmt.Sprintf("setup · %d of %d", m.i+1, len(m.steps))))
@@ -232,6 +282,13 @@ func (m wizModel) View() string {
 		b.WriteString(titleStyle.Render("How should pulse be reachable?"))
 		b.WriteString("\n\n")
 		b.WriteString(m.renderChoices(exposeChoices))
+	case "domain":
+		b.WriteString(titleStyle.Render("Which domain or IP is this server reachable at?"))
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("Pulse will request a trusted HTTPS certificate for it from Let's Encrypt."))
+		b.WriteString("\n\n  ")
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
 	case "password":
 		b.WriteString(titleStyle.Render("Set a login password"))
 		b.WriteString("\n")

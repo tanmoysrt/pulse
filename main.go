@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -70,7 +71,7 @@ func main() {
 	agent, agentArgs, o := parseArgs(args)
 	if agent != "" {
 		if !validAgents[agent] {
-			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id> | pulse stop | pulse update")
+			fmt.Fprintln(os.Stderr, "usage: pulse [--lan|--tunnel|--local|--acme <domain>] [--password <pw>] [--listen-port <n>] [--notify] [<claude|codex|opencode> [agent args...]]\n       pulse ls | pulse attach <id> | pulse stop | pulse update")
 			os.Exit(2)
 		}
 		runClient(agent, agentArgs)
@@ -265,11 +266,28 @@ func runDaemon(o opts) {
 	pref := defaultPort
 	if o.port > 0 {
 		pref = o.port
+	} else if o.acme {
+		pref = 443
 	}
+
+	var cs *certStore
+	if o.acme {
+		fmt.Printf("pulse: preparing certificate for %s…\n", o.domain)
+		cert, err := ensureCertificate(o.domain)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pulse: could not get a certificate:", err)
+			return
+		}
+		cs = newCertStore(cert)
+	}
+
 	ln, port := listen(bindHost, pref)
+	if cs != nil {
+		ln = tls.NewListener(ln, &tls.Config{GetCertificate: cs.get})
+	}
 	d := newDaemon(token, passwordHash, o.localNotify, port)
 	defer d.stopSleepInhibitor()
-	writeSetup(setupRecord{Tunnel: o.tunnel, Notify: o.localNotify, PasswordHash: passwordHash})
+	writeSetup(setupRecord{Tunnel: o.tunnel, Acme: o.acme, Domain: o.domain, Notify: o.localNotify, PasswordHash: passwordHash})
 	d.reconcile()
 	d.startSleepInhibitor()
 	go d.stats.collect()
@@ -278,6 +296,10 @@ func runDaemon(o opts) {
 	d.urls, d.primary = urls, primary // exposed via /api/status so a later `pulse` can reprint this exact banner
 	d.tunnel = o.tunnel
 	d.exePath = exePath
+	d.certStore, d.acmeDomain = cs, o.domain
+	if cs != nil {
+		go renewCertLoop(d)
+	}
 
 	e := startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
@@ -364,6 +386,8 @@ func detachArgs(o opts, port int) []string {
 	switch {
 	case o.local:
 		args = append(args, "--local")
+	case o.acme:
+		args = append(args, "--acme", o.domain)
 	case o.tunnel:
 		args = append(args, "--tunnel")
 	default:
@@ -494,6 +518,13 @@ func promptStopAll(n int) bool {
 // resolveURLs figures out the primary URL and the full list to display. Call
 // once per startup — it may start a tunnel process.
 func resolveURLs(o opts, port int) (urls []string, primary string) {
+	if o.acme {
+		url := fmt.Sprintf("https://%s", o.domain)
+		if port != 443 {
+			url = fmt.Sprintf("https://%s:%d", o.domain, port)
+		}
+		return []string{url}, url
+	}
 	localhost := fmt.Sprintf("http://localhost:%d", port)
 	urls = []string{localhost}
 	primary = localhost
@@ -587,11 +618,11 @@ func freePort(host string) (net.Listener, int) {
 // opts holds daemon startup choices. The *Set fields record whether a flag fixed
 // the value, so the wizard only prompts for what the user left open.
 type opts struct {
-	local, tunnel, localNotify                 bool
-	password                                   string
-	port                                       int
-	tunnelSet, notifySet, passwordSet, portSet bool
-	passwordHash                               string
+	local, tunnel, acme, localNotify                    bool
+	password, domain                                    string
+	port                                                int
+	tunnelSet, acmeSet, notifySet, passwordSet, portSet bool
+	passwordHash                                        string
 }
 
 // parseArgs strips pulse's own flags; the first remaining positional (if any)
@@ -607,6 +638,11 @@ func parseArgs(argv []string) (agent string, agentArgs []string, o opts) {
 			o.tunnel, o.tunnelSet = true, true
 		case "--lan":
 			o.tunnel, o.tunnelSet = false, true
+		case "--acme":
+			if i+1 < len(argv) {
+				i++
+				o.domain, o.acme, o.acmeSet = argv[i], true, true
+			}
 		case "--notify":
 			o.localNotify, o.notifySet = true, true
 		case "--password":

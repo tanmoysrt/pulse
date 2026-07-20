@@ -12,6 +12,8 @@ import (
 // restarting Pulse never requires retaining the plaintext credential.
 type setupRecord struct {
 	Tunnel       bool   `json:"tunnel"`
+	Acme         bool   `json:"acme"`
+	Domain       string `json:"domain,omitempty"`
 	Notify       bool   `json:"notify"`
 	PasswordHash string `json:"passwordHash,omitempty"`
 }
