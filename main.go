@@ -234,7 +234,10 @@ func runDaemon(o opts) {
 	startServer(d, ln)
 	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
 
-	fmt.Print(daemonBanner(d, o, port))
+	urls, primary := resolveURLs(o, port)
+	shown := daemonBanner(d, urls, primary)
+	fmt.Print(shown)
+	go watchBootstrapRotation(d, urls, primary, shown)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	<-ctx.Done()
@@ -286,11 +289,12 @@ func promptStopAll(n int) bool {
 	}
 }
 
-// daemonBanner is the startup screen: the primary URL, its QR, and useful commands.
-func daemonBanner(d *Daemon, o opts, port int) string {
+// resolveURLs figures out the primary URL and the full list to display. Call
+// once per startup — it may start a tunnel process.
+func resolveURLs(o opts, port int) (urls []string, primary string) {
 	localhost := fmt.Sprintf("http://localhost:%d", port)
-	urls := []string{localhost}
-	primary := localhost
+	urls = []string{localhost}
+	primary = localhost
 	if o.tunnel && !o.local {
 		if u, err := startLocalTunnel(port); err != nil {
 			fmt.Fprintln(os.Stderr, "pulse: tunnel unavailable, falling back to LAN:", err)
@@ -300,7 +304,9 @@ func daemonBanner(d *Daemon, o opts, port int) string {
 		}
 	}
 	if !o.local {
-		for _, ip := range interfaceIPs() {
+		ips := interfaceIPs()
+		reorderPreferredFirst(ips)
+		for _, ip := range ips {
 			url := fmt.Sprintf("http://%s:%d", ip, port)
 			urls = append(urls, url)
 			if primary == localhost {
@@ -308,7 +314,23 @@ func daemonBanner(d *Daemon, o opts, port int) string {
 			}
 		}
 	}
-	return renderSummary(urls, qrOf(withToken(primary, d.token)))
+	return urls, primary
+}
+
+// daemonBanner is the startup screen: the URL list and its QR.
+func daemonBanner(d *Daemon, urls []string, primary string) string {
+	return renderSummary(urls, qrOf(withToken(primary, d.currentBootstrap())))
+}
+
+// watchBootstrapRotation redraws the QR whenever its token rotates.
+func watchBootstrapRotation(d *Daemon, urls []string, primary, shown string) {
+	for range d.bootstrapRotated {
+		if lines := strings.Count(shown, "\n"); lines > 0 {
+			fmt.Printf("\x1b[%dA\x1b[0J", lines)
+		}
+		shown = daemonBanner(d, urls, primary)
+		fmt.Print(shown)
+	}
 }
 
 func qrOf(url string) string {
@@ -433,4 +455,55 @@ func interfaceIPs() []string {
 	}
 	sort.Strings(ips)
 	return ips
+}
+
+// reorderPreferredFirst moves the LAN IP most likely reachable from a phone
+// on the same network to the front of ips, in place.
+func reorderPreferredFirst(ips []string) {
+	if len(ips) < 2 {
+		return
+	}
+	pref := preferredIP(ips)
+	for i, ip := range ips {
+		if ip == pref {
+			ips[0], ips[i] = ips[i], ips[0]
+			return
+		}
+	}
+}
+
+// preferredIP prefers the OS's default-route interface, else the ranges home
+// routers actually hand out (192.168.x.x, then 10.x.x).
+func preferredIP(ips []string) string {
+	if out := outboundIP(); out != "" {
+		for _, ip := range ips {
+			if ip == out {
+				return ip
+			}
+		}
+	}
+	for _, prefix := range []string{"192.168.", "10."} {
+		for _, ip := range ips {
+			if strings.HasPrefix(ip, prefix) {
+				return ip
+			}
+		}
+	}
+	return ips[0]
+}
+
+// outboundIP returns the local address the OS would route through to reach
+// the internet. UDP "connect" only consults the routing table — no packets
+// sent — and 203.0.113.0/24 is the RFC 5737 documentation range.
+func outboundIP() string {
+	conn, err := net.Dial("udp4", "203.0.113.1:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return ""
+	}
+	return addr.IP.String()
 }

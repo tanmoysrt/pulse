@@ -4,15 +4,24 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const authCookie = "pulse_token"
+
+// The browser cookie is a JWT signed with the daemon's token, not the token
+// itself, refreshed once past the halfway point of its life.
+const (
+	sessionTTL           = 30 * 24 * time.Hour
+	sessionRefreshWindow = sessionTTL / 2
+)
 
 // Paths served without auth: the SPA shell (so it can render the login view),
 // its static companions, and the login/logout endpoints.
@@ -39,27 +48,63 @@ func withToken(base, token string) string {
 	return base + "/?t=" + token
 }
 
-// authMiddleware requires the token as a ?t= query param (first visit, e.g. from
-// the QR) or the cookie it then sets; same-origin fetch/EventSource send the
-// cookie for free. Public paths pass through so the login page can load.
-func authMiddleware(token string) echo.MiddlewareFunc {
-	want := []byte(token)
-	ok := func(got string) bool {
-		return subtle.ConstantTimeCompare([]byte(got), want) == 1
+// signSession issues a JWT bound to secret, valid for sessionTTL.
+func signSession(secret string) (string, error) {
+	now := time.Now()
+	claims := jwt.RegisteredClaims{
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(sessionTTL)),
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}
+
+// verifySession reports whether tok is valid for secret, and its remaining life.
+func verifySession(secret, tok string) (time.Duration, bool) {
+	parsed, err := jwt.ParseWithClaims(tok, &jwt.RegisteredClaims{}, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !parsed.Valid {
+		return 0, false
+	}
+	claims, ok := parsed.Claims.(*jwt.RegisteredClaims)
+	if !ok || claims.ExpiresAt == nil {
+		return 0, false
+	}
+	return time.Until(claims.ExpiresAt.Time), true
+}
+
+// authMiddleware accepts the hook token, the current bootstrap token, or a
+// signed session cookie. Public paths pass through so the login page can load.
+func authMiddleware(d *Daemon) echo.MiddlewareFunc {
+	hookToken := []byte(d.token)
+	okHook := func(got string) bool {
+		return subtle.ConstantTimeCompare([]byte(got), hookToken) == 1
+	}
+	issue := func(c echo.Context) {
+		if tok, err := signSession(d.token); err == nil {
+			setAuthCookie(c, tok)
+		}
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			// Honor ?t= first (even on public paths) so the QR's /?t=<token> sets
-			// the cookie on the very first page load.
-			if q := c.QueryParam("t"); q != "" && ok(q) {
-				setAuthCookie(c, token)
+			// Honor ?t= first (even on public paths) so a bootstrap link works on load.
+			if q := c.QueryParam("t"); q != "" && (okHook(q) || d.consumeBootstrap(q)) {
+				issue(c)
 				return next(c)
 			}
 			if publicPaths[c.Path()] {
 				return next(c)
 			}
-			if ck, err := c.Cookie(authCookie); err == nil && ok(ck.Value) {
-				return next(c)
+			if ck, err := c.Cookie(authCookie); err == nil {
+				if remaining, ok := verifySession(d.token, ck.Value); ok {
+					if remaining < sessionRefreshWindow {
+						issue(c)
+					}
+					return next(c)
+				}
 			}
 			return c.NoContent(http.StatusUnauthorized)
 		}
@@ -147,7 +192,11 @@ func (d *Daemon) apiLogin(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "wrong password"})
 	}
 	d.logins.reset(ip)
-	setAuthCookie(c, d.token)
+	tok, err := signSession(d.token)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not create session"})
+	}
+	setAuthCookie(c, tok)
 	return c.NoContent(http.StatusOK)
 }
 

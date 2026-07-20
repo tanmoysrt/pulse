@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -21,31 +22,59 @@ import (
 
 // Daemon owns every live Session and serves the UI plus cross-tool history.
 type Daemon struct {
-	mu           sync.Mutex
-	sessions     map[string]*Session
-	seq          int
-	token        string
-	passwordHash string
-	localNotify  bool
-	logins       *loginLimiter
-	stats        *statsRing
-	vapid        *vapidKey
-	pushSubs     []pushSub
-	port         int
-	awake        *sleepInhibitor
+	mu               sync.Mutex
+	sessions         map[string]*Session
+	seq              int
+	token            string // long-lived: signs session JWTs, authenticates hook callbacks
+	bootstrap        string // single-use: embedded in the QR/setup link, rotated once consumed
+	bootstrapRotated chan struct{}
+	passwordHash     string
+	localNotify      bool
+	logins           *loginLimiter
+	stats            *statsRing
+	vapid            *vapidKey
+	pushSubs         []pushSub
+	port             int
+	awake            *sleepInhibitor
 }
 
 func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
 	return &Daemon{
-		sessions:     map[string]*Session{},
-		token:        token,
-		passwordHash: passwordHash,
-		localNotify:  localNotify,
-		logins:       newLoginLimiter(),
-		stats:        newStatsRing(),
-		port:         port,
-		vapid:        loadOrCreateVapid(),
+		sessions:         map[string]*Session{},
+		token:            token,
+		bootstrap:        randomToken(),
+		bootstrapRotated: make(chan struct{}, 1),
+		passwordHash:     passwordHash,
+		localNotify:      localNotify,
+		logins:           newLoginLimiter(),
+		stats:            newStatsRing(),
+		port:             port,
+		vapid:            loadOrCreateVapid(),
 	}
+}
+
+// currentBootstrap returns the active single-use QR/setup-link token.
+func (d *Daemon) currentBootstrap() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.bootstrap
+}
+
+// consumeBootstrap reports whether tok is the current bootstrap token, rotating
+// it and notifying watchBootstrapRotation on a match.
+func (d *Daemon) consumeBootstrap(tok string) bool {
+	d.mu.Lock()
+	if d.bootstrap == "" || subtle.ConstantTimeCompare([]byte(tok), []byte(d.bootstrap)) != 1 {
+		d.mu.Unlock()
+		return false
+	}
+	d.bootstrap = randomToken()
+	d.mu.Unlock()
+	select {
+	case d.bootstrapRotated <- struct{}{}:
+	default:
+	}
+	return true
 }
 
 func (d *Daemon) get(id string) *Session {
@@ -381,7 +410,7 @@ func startServer(d *Daemon, ln net.Listener) {
 	e.HideBanner = true
 	e.HidePort = true
 	if d.token != "" {
-		e.Use(authMiddleware(d.token))
+		e.Use(authMiddleware(d))
 	}
 	e.Use(middleware.BodyLimit(fmt.Sprintf("%dM", maxUploadSize/(1<<20)+1)))
 	if os.Getenv("PULSE_DEBUG") != "" {
@@ -401,6 +430,7 @@ func startServer(d *Daemon, ln net.Listener) {
 	e.GET("/api/history", d.apiHistory)
 	e.GET("/api/dirs", d.apiDirs)
 	e.GET("/api/stats", d.apiStats)
+	e.GET("/api/version", d.apiVersion)
 	e.GET("/api/push/key", d.apiPushKey)
 	e.POST("/api/push/subscribe", d.apiPushSubscribe)
 
