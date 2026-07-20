@@ -274,8 +274,6 @@ func runDaemon(o opts) {
 	pref := defaultPort
 	if o.port > 0 {
 		pref = o.port
-	} else if o.acme {
-		pref = 443
 	}
 
 	var tlsCert *tls.Certificate

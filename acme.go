@@ -349,13 +349,13 @@ func restoreOwnership() {
 }
 
 // applyBindCapability grants pulse's own binary permission to bind ports
-// below 1024 without root, so `pulse` can serve HTTPS on :443 unprivileged
-// afterwards. Re-run "pulse add-domain" (as root) any time the binary is
-// replaced — e.g. after an update — since Linux clears file capabilities on
-// any write to the file.
+// below 1024 without root, in case a future run picks one (e.g. --listen-port
+// 443). Re-run "pulse add-domain" (as root) any time the binary is replaced
+// — e.g. after an update — since Linux clears file capabilities on any write
+// to the file.
 func applyBindCapability() {
 	if runtime.GOOS != "linux" {
-		fmt.Println("pulse: on this OS, binding port 443 needs root, run pulse with sudo, or put it behind a reverse proxy")
+		fmt.Println("pulse: on this OS, binding a port below 1024 needs root, run pulse with sudo if you use one")
 		return
 	}
 	exe, err := os.Executable()
@@ -367,11 +367,11 @@ func applyBindCapability() {
 		return
 	}
 	if out, err := exec.Command("setcap", "cap_net_bind_service=+ep", exe).CombinedOutput(); err != nil {
-		fmt.Println("pulse: run this once so pulse can bind port 443 without root: sudo setcap cap_net_bind_service=+ep " + exe)
+		fmt.Println("pulse: run this once so pulse can bind a port below 1024 without root: sudo setcap cap_net_bind_service=+ep " + exe)
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			fmt.Println("       (" + msg + ")")
 		}
 		return
 	}
-	fmt.Println("pulse: granted " + exe + " permission to bind port 443 without root")
+	fmt.Println("pulse: granted " + exe + " permission to bind ports below 1024 without root")
 }
