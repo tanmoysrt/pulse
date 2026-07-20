@@ -47,7 +47,8 @@
       :agent="state.agent" :busy="isBusy" :disabled="state.closed"
       :modes="modes" :models="models" :efforts="efforts"
       :mode="state.mode" :model-label="state.modelLabel" :effort-label="state.effortLabel" :upload-fn="uploadFile"
-      @send="onSend" @stop="interrupt" @set-mode="setMode" @set-model="setModel" @set-effort="setEffort" />
+      @send="onSend" @stop="interrupt" @set-mode="setMode" @set-model="setModel" @set-effort="setEffort"
+      @resize="onFooterResize" />
   </div>
 </template>
 
@@ -97,6 +98,12 @@ function onClose() {
   close().then((r) => { if (r.ok) goHome() })
 }
 function onDecide(decision) { if (state.pending) decide(state.pending.id, decision) }
+
+// The composer's footer height only settles after its own mount (the CSS var
+// it drives starts at a fallback), so the transcript can land short of the
+// true bottom on open. Re-snap once it's known, but only if still near the
+// bottom — never yank the view back down if the user has scrolled up to read.
+function onFooterResize() { transcript.value && transcript.value.scrollDown() }
 
 function onSend({ full, caption, snapshot }, done) {
   // Show the message immediately; drop it again if the send is rejected (the

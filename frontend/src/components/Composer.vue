@@ -61,7 +61,7 @@ const props = defineProps({
   mode: String, modelLabel: String, effortLabel: String,
   uploadFn: Function,
 })
-const emit = defineEmits(['send', 'stop', 'setMode', 'setModel', 'setEffort'])
+const emit = defineEmits(['send', 'stop', 'setMode', 'setModel', 'setEffort', 'resize'])
 
 const text = ref('')
 const attachments = ref([])
@@ -140,7 +140,13 @@ onMounted(() => {
   footer.value = input.value.closest('footer')
   if (window.ResizeObserver && footer.value) {
     ro = new ResizeObserver((entries) => {
+      // The transcript's scrollable area is padded by this var, so its
+      // scrollHeight changes without the transcript's own ResizeObserver
+      // ever seeing it (the footer isn't inside it) — nudge it back to
+      // bottom explicitly, e.g. once the real height replaces the CSS
+      // fallback on first mount, or as the composer grows while typing.
       document.documentElement.style.setProperty('--footer-h', entries[0].contentRect.height + 'px')
+      emit('resize')
     })
     ro.observe(footer.value)
   }
