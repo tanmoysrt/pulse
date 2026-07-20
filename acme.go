@@ -227,7 +227,11 @@ func issueCertificate(target string) (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	client, err := lego.NewClient(lego.NewConfig(user))
+	config := lego.NewConfig(user)
+	// Let's Encrypt rejects a CSR with an IP address (or any identifier) in
+	// the Common Name; the SAN entry is authoritative, so drop the CN.
+	config.Certificate.DisableCommonName = true
+	client, err := lego.NewClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("acme client: %w", err)
 	}
