@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
-    <div class="sheet-backdrop" @click.self="$emit('close')">
-      <div class="settings-sheet" role="dialog" aria-label="Settings">
+    <div class="sheet-backdrop" @click.self="close">
+      <div ref="root" class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
         <div class="sheet-head">
           <h3>Settings</h3>
-          <button class="icon-btn" aria-label="Close" @click="$emit('close')"><Icon name="x" :size="18" /></button>
+          <button class="icon-btn" aria-label="Close" @click="close"><Icon name="x" :size="18" /></button>
         </div>
 
         <div class="sheet-body">
@@ -20,7 +20,6 @@
               ><span class="toggle-knob"></span></button>
             </div>
 
-            <div class="set-section">System</div>
             <div v-for="m in metrics" :key="m.key" class="stat">
               <div class="stat-head">
                 <span class="stat-icon" :style="{ color: m.color }"><Icon :name="m.icon" :size="15" /></span>
@@ -30,6 +29,16 @@
               </div>
               <Sparkline v-if="hasStats" :values="m.values" :max="m.max" :color="m.color" />
               <div v-else class="skeleton skeleton-spark"></div>
+            </div>
+
+            <div class="set-row">
+              <div class="set-row-main">
+                <div class="set-row-title">Version</div>
+                <div class="set-row-sub">{{ ver.current || '…' }}</div>
+              </div>
+              <a v-if="ver.available" class="update-pill" :href="ver.url" target="_blank" rel="noopener">
+                Update to {{ ver.latest }}
+              </a>
             </div>
 
           <button class="btn btn-ghost btn-block set-logout" @click="doLogout">Log out</button>
@@ -42,15 +51,20 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getStats, logout } from '../lib/api'
+import { getStats, getVersion, logout } from '../lib/api'
+import { useModal } from '../composables/useModal'
 import Icon from './Icon.vue'
 import Sparkline from './Sparkline.vue'
 
 defineProps({ pushSupported: Boolean, pushOn: Boolean })
-defineEmits(['close', 'toggle-push'])
+const emit = defineEmits(['close', 'toggle-push'])
 
 const router = useRouter()
+const root = ref(null)
+function close() { emit('close') }
+useModal(root, close)
 const samples = ref([])
+const ver = ref({})
 let poll = null
 
 const hasStats = computed(() => samples.value.length > 1)
@@ -83,6 +97,10 @@ async function doLogout() {
   router.replace('/login')
 }
 
-onMounted(() => { refresh(); poll = setInterval(refresh, 5000) })
+async function refreshVersion() {
+  try { ver.value = await getVersion() } catch (e) { /* no version info this time */ }
+}
+
+onMounted(() => { refresh(); poll = setInterval(refresh, 5000); refreshVersion() })
 onUnmounted(() => clearInterval(poll))
 </script>
