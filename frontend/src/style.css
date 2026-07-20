@@ -495,17 +495,15 @@
     .ptr.spin { transform: translateX(-50%); }
     .ptr.spin svg { animation: spin 0.7s linear infinite; }
     .home-section { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 16px 8px 8px; }
+    /* Flat list with separators; live sessions read the same as history
+       rows, distinguished only by the green corner badge on their icon. */
     .card {
       display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font: inherit; color: var(--text);
-      transition: background 0.15s, border-color 0.15s;
+      background: none; border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+      padding: 11px 6px; margin-bottom: 0; cursor: pointer; font: inherit; color: var(--text);
+      transition: background 0.15s;
     }
-    .card:hover { background: var(--hover); }
-    /* History rows read as a flat list with separators; the card surface is
-       reserved for Active sessions so recency groups stay legible. */
-    .card.flat { background: none; border-color: transparent; border-bottom-color: var(--border); border-radius: 0; margin-bottom: 0; padding: 11px 6px; }
-    .card.flat:hover { background: var(--surface); }
+    .card:hover { background: var(--surface); }
     .agent-badge {
       position: relative;
       flex: none; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;

@@ -31,7 +31,7 @@
       <VirtualList v-if="rows.length" class="home-list" :items="rows" :item-key="(r) => r.key" :estimate="66">
         <template #default="{ item }">
           <div v-if="item.type === 'header'" class="home-section">{{ item.text }}</div>
-          <button v-else class="card" :class="{ flat: !item.live }" @click="open(item.s, item.live)">
+          <button v-else class="card" @click="open(item.s, item.live)">
             <div class="agent-badge" :class="'agent-' + item.s.tool">
               <AgentLogo :tool="item.s.tool" />
               <span v-if="item.live" class="live-corner" title="Live"></span>
