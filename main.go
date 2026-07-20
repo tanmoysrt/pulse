@@ -38,6 +38,7 @@ const (
 	daemonResumeEnv         = "PULSE_DAEMON_RESUME"
 	daemonResumeTokenEnv    = "PULSE_RESUME_TOKEN"
 	daemonResumePassHashEnv = "PULSE_RESUME_PWHASH"
+	daemonResumeCtrlPortEnv = "PULSE_RESUME_CTRL_PORT"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=..."; "dev"
@@ -174,7 +175,7 @@ func daemonSessions() ([]listItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no daemon running")
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions", st.Port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions", st.CtrlPort)
 	if st.Token != "" {
 		url += "?t=" + st.Token
 	}
@@ -199,7 +200,7 @@ func runClient(agent string, agentArgs []string) {
 	}
 	dir, _ := os.Getwd()
 	body, _ := json.Marshal(map[string]any{"agent": agent, "dir": dir, "args": agentArgs})
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions", st.Port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/sessions", st.CtrlPort)
 	if st.Token != "" {
 		url += "?t=" + st.Token
 	}
@@ -290,10 +291,25 @@ func runDaemon(o opts) {
 	}
 
 	ln, port := listen(bindHost, pref)
+	var ctrlLn net.Listener
+	ctrlPort := port
 	if tlsCert != nil {
 		ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{*tlsCert}})
+
+		// acme mode wraps the public listener in TLS, but pulse's own CLI
+		// and the hook callbacks agents make (session-start/permission/stop)
+		// run as plain HTTP on loopback — give them a dedicated plaintext
+		// port instead, reused across a "bg"/self-update restart just like
+		// the public one so already-spawned sessions' baked-in hook URLs
+		// keep working.
+		ctrlPref := 0
+		if resuming {
+			ctrlPref, _ = strconv.Atoi(os.Getenv(daemonResumeCtrlPortEnv))
+		}
+		ctrlLn, ctrlPort = listenCtrl(ctrlPref)
 	}
-	d := newDaemon(token, passwordHash, o.localNotify, port)
+	d := newDaemon(token, passwordHash, o.localNotify)
+	d.ctrlPort = ctrlPort
 	defer d.stopSleepInhibitor()
 	writeSetup(setupRecord{Tunnel: o.tunnel, Acme: o.acme, Domain: o.domain, Notify: o.localNotify, PasswordHash: passwordHash})
 	d.reconcile()
@@ -306,7 +322,16 @@ func runDaemon(o opts) {
 	d.exePath = exePath
 
 	e := startServer(d, ln)
-	writeState(daemonState{Port: port, Token: token, PID: os.Getpid()})
+	var ctrlSrv *http.Server
+	if ctrlLn != nil {
+		ctrlSrv = &http.Server{Handler: e}
+		go func() {
+			if err := ctrlSrv.Serve(ctrlLn); err != nil && err != http.ErrServerClosed {
+				fmt.Println("pulse: control server error:", err)
+			}
+		}()
+	}
+	writeState(daemonState{Port: port, CtrlPort: ctrlPort, Token: token, PID: os.Getpid()})
 
 	shown := daemonBanner(d, urls, primary)
 	fmt.Print(shown)
@@ -322,7 +347,7 @@ func runDaemon(o opts) {
 		handleShutdown(d)
 	case <-d.restart:
 		stop()
-		runDetach(d, o, port, token, passwordHash, exePath, e)
+		runDetach(d, o, port, ctrlSrv, ctrlPort, token, passwordHash, exePath, e)
 	}
 }
 
@@ -354,12 +379,15 @@ func watchDetach(d *Daemon) {
 // exePath is runDaemon's startup-captured path, not a fresh os.Executable()
 // call — see runDaemon's comment: after a self-update renames the running
 // binary aside, a fresh lookup would resolve to that renamed old file.
-func runDetach(d *Daemon, o opts, port int, token, passwordHash, exePath string, e *echo.Echo) {
+func runDetach(d *Daemon, o opts, port int, ctrlSrv *http.Server, ctrlPort int, token, passwordHash, exePath string, e *echo.Echo) {
 	fmt.Println("\npulse: moving to background…")
 	d.persist()
 	d.stopSleepInhibitor()
 	removeState()
 	e.Shutdown(context.Background())
+	if ctrlSrv != nil {
+		ctrlSrv.Shutdown(context.Background())
+	}
 
 	logPath := filepath.Join(filepath.Dir(statePath()), "daemon.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -373,7 +401,8 @@ func runDetach(d *Daemon, o opts, port int, token, passwordHash, exePath string,
 	cmd.Env = append(os.Environ(),
 		daemonResumeEnv+"=1",
 		daemonResumeTokenEnv+"="+token,
-		daemonResumePassHashEnv+"="+passwordHash)
+		daemonResumePassHashEnv+"="+passwordHash,
+		daemonResumeCtrlPortEnv+"="+strconv.Itoa(ctrlPort))
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -431,7 +460,7 @@ func printStatus(st *daemonState) {
 // fetchStatus asks a running daemon for the banner data it resolved at
 // startup (urls/primary/bootstrap — see Daemon.apiStatus).
 func fetchStatus(st *daemonState) (urls []string, primary, bootstrap string, err error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/status", st.Port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/status", st.CtrlPort)
 	if st.Token != "" {
 		url += "?t=" + st.Token
 	}
@@ -607,6 +636,17 @@ func listen(host string, preferred int) (net.Listener, int) {
 		return ln, preferred
 	}
 	return freePort(host)
+}
+
+// listenCtrl binds pulse's loopback-only control port. preferred reuses the
+// port across a "bg"/self-update restart (see runDetach); 0 picks any free one.
+func listenCtrl(preferred int) (net.Listener, int) {
+	if preferred > 0 {
+		if ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", preferred)); err == nil {
+			return ln, preferred
+		}
+	}
+	return freePort("127.0.0.1")
 }
 
 func freePort(host string) (net.Listener, int) {

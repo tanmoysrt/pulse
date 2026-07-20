@@ -34,7 +34,7 @@ type Daemon struct {
 	stats            *statsRing
 	vapid            *vapidKey
 	pushSubs         []pushSub
-	port             int
+	ctrlPort         int // loopback-only, always-plaintext — hook callbacks and the pulse CLI use this to reach the daemon even when the public listener is wrapped in TLS (acme mode)
 	awake            *sleepInhibitor
 	urls             []string // reachable URLs, resolved once at startup (includes tunnel URL if any)
 	primary          string   // the one urls entry the QR/status view leads with
@@ -44,7 +44,7 @@ type Daemon struct {
 	restartOnce      sync.Once
 }
 
-func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
+func newDaemon(token, passwordHash string, localNotify bool) *Daemon {
 	return &Daemon{
 		sessions:         map[string]*Session{},
 		token:            token,
@@ -54,7 +54,6 @@ func newDaemon(token, passwordHash string, localNotify bool, port int) *Daemon {
 		localNotify:      localNotify,
 		logins:           newLoginLimiter(),
 		stats:            newStatsRing(),
-		port:             port,
 		vapid:            loadOrCreateVapid(),
 		restart:          make(chan struct{}),
 	}
@@ -197,7 +196,7 @@ func (d *Daemon) spawn(agent, dir string, agentArgs []string, r *resume) (*Sessi
 	var extraArgs []string
 	switch agent {
 	case "claude":
-		settings, err := hookSettings(d.port, id, d.token)
+		settings, err := hookSettings(d.ctrlPort, id, d.token)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +216,7 @@ func (d *Daemon) spawn(agent, dir string, agentArgs []string, r *resume) (*Sessi
 	}
 
 	args := append(append([]string{}, agentArgs...), extraArgs...)
-	env := []string{fmt.Sprintf("PULSE_PORT=%d", d.port)}
+	env := []string{fmt.Sprintf("PULSE_PORT=%d", d.ctrlPort)}
 	if err := tmuxSpawn(tmuxSession, dir, env, append([]string{agent}, args...)); err != nil {
 		s.cleanup()
 		return nil, err
@@ -506,9 +505,10 @@ func startServer(d *Daemon, ln net.Listener) *echo.Echo {
 
 // daemonState lets a `pulse <agent>` client find the daemon's port and token.
 type daemonState struct {
-	Port  int    `json:"port"`
-	Token string `json:"token"`
-	PID   int    `json:"pid"`
+	Port     int    `json:"port"`
+	CtrlPort int    `json:"ctrlPort"` // loopback-only, always-plaintext — see Daemon.ctrlPort
+	Token    string `json:"token"`
+	PID      int    `json:"pid"`
 }
 
 func statePath() string {
